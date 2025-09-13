@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    {
+      "id": "x0",
+      "op": "rolling_return",
+      "n": 126
+    },
+    {
+      "id": "x1",
+      "op": "rolling_return",
+      "n": 21
+    },
+    {
+      "id": "x2",
+      "op": "sub",
+      "a": "x0",
+      "b": "x1"
+    },
+    {
+      "id": "x3",
+      "op": "winsor_quantile",
+      "src": "x2",
+      "q": 0.02
+    },
+    {
+      "id": "score",
+      "op": "zscore_xs",
+      "src": "x3"
+    }
+  ],
+  "output": "score"
+}
