@@ -86,40 +86,18 @@ class FactorImproveEnv(gym.Env):
         scores = evaluate_program(factor_program, self.returns)
         return analyze_factor_performance(scores, self.returns)
 
-    def _combine_factors(self, base_program, new_factor, weight):
-        """Combine the base program with a new factor using the specified weight."""
-        # Create a new program that combines the base with the new factor
-        combined_nodes = base_program["nodes"].copy()
-        new_nodes = new_factor["nodes"].copy()
+    def _validate_and_set_program(self, program):
+        """Validate and set the new program, replacing the current one entirely."""
+        # Validate the program structure
+        is_valid, errors = validate_program(program)
+        if not is_valid:
+            raise ValueError(f"Invalid program: {errors}")
         
-        # Add the new factor nodes with modified IDs to avoid conflicts
-        for node in new_nodes:
-            node["id"] = f"new_{node['id']}"
-            # Update references in the new factor
-            if "src" in node:
-                node["src"] = f"new_{node['src']}"
-            if "a" in node:
-                node["a"] = f"new_{node['a']}"
-            if "b" in node:
-                node["b"] = f"new_{node['b']}"
-            if "inputs" in node:
-                node["inputs"] = [f"new_{inp}" for inp in node["inputs"]]
+        # Set the new program
+        self.current_program = program
+        Path("factors/candidate_program.json").write_text(json.dumps(program, indent=2))
         
-        # Add a combine node
-        combine_node = {
-            "id": "combined_score",
-            "op": "combine",
-            "inputs": [base_program["output"], f"new_{new_factor['output']}"],
-            "weights": [1.0 - weight, weight]
-        }
-        
-        combined_nodes.extend(new_nodes)
-        combined_nodes.append(combine_node)
-        
-        return {
-            "nodes": combined_nodes,
-            "output": "combined_score"
-        }
+        return True
 
     def _run_in_sample_backtest(self, program, generate_plot=False):
         """Run in-sample backtest on the given program."""
@@ -210,17 +188,15 @@ class FactorImproveEnv(gym.Env):
 
         elif atype == "FACTOR_IMPROVE":
             try:
-                new_factor = action.get("new_factor")
-                weight = action.get("weight", 0.5)
+                new_program = action.get("new_program")
                 
-                # Combine the current program with the new factor
-                combined_program = self._combine_factors(self.current_program, new_factor, weight)
+                # Validate and set the new program
+                self._validate_and_set_program(new_program)
                 
                 # Run in-sample backtest
-                is_results = self._run_in_sample_backtest(combined_program, generate_plot=True)
+                is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
                 
-                # Update current program and performance
-                self.current_program = combined_program
+                # Update current performance
                 self.current_performance = is_results
                 
                 # Calculate incremental reward
@@ -250,7 +226,8 @@ class FactorImproveEnv(gym.Env):
                         "plot_path": is_results.get("plot_path")
                     },
                     "improvement": float(improvement),
-                    "incremental_reward": float(incremental_reward)
+                    "incremental_reward": float(incremental_reward),
+                    "program_updated": True
                 }
                 
                 reward = incremental_reward
@@ -265,41 +242,6 @@ class FactorImproveEnv(gym.Env):
                 }
                 reward = -1.0
 
-        elif atype == "SET_PARAMS":
-            # Params already validated by validate_action
-            self.params.update(action.get("params", {}))
-            self.last_eval = {
-                "oos_sharpe": 0.0,
-                "turnover": 0.0,
-                "tests_pass": True,
-                "leak": False,
-                "params_updated": True
-            }
-            reward = 0.0
-
-        elif atype == "SET_PROGRAM":
-            # Program already validated by validate_action, but double-check
-            is_valid_program, program_errors = validate_program(action["program"])
-            if not is_valid_program:
-                reward = -2.0
-                self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
-                    "tests_pass": False,
-                    "leak": False,
-                    "validation_errors": program_errors
-                }
-            else:
-                self.current_program = action["program"]
-                Path("factors/candidate_program.json").write_text(json.dumps(action["program"], indent=2))
-                self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
-                    "tests_pass": True,
-                    "leak": False,
-                    "program_updated": True
-                }
-                reward = 0.0
 
         elif atype == "EVALUATE":
             # Run OOS backtest

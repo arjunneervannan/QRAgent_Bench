@@ -11,17 +11,21 @@ def simple_policy(obs: dict) -> dict:
         return {"type": "OBSERVE", "tool": "describe_data"}
     # Second step: try to improve the factor
     if obs["budget_left"] == 3:
-        # Create a simple momentum factor
-        new_factor = {
+        # Create a complete new factor program
+        new_program = {
             "nodes": [
-                {"id": "x0", "op": "rolling_return", "n": 63},
-                {"id": "x1", "op": "rolling_return", "n": 5},
+                {"id": "x0", "op": "rolling_return", "n": 126},
+                {"id": "x1", "op": "rolling_return", "n": 21},
                 {"id": "x2", "op": "sub", "a": "x0", "b": "x1"},
-                {"id": "score", "op": "zscore_xs", "src": "x2"}
+                {"id": "x3", "op": "rolling_return", "n": 63},
+                {"id": "x4", "op": "ema", "n": 10, "src": "x3"},
+                {"id": "x5", "op": "add", "a": "x2", "b": "x4"},
+                {"id": "x6", "op": "winsor_quantile", "src": "x5", "q": 0.02},
+                {"id": "score", "op": "zscore_xs", "src": "x6"}
             ],
             "output": "score"
         }
-        return {"type": "FACTOR_IMPROVE", "new_factor": new_factor, "weight": 0.3}
+        return {"type": "FACTOR_IMPROVE", "new_program": new_program}
     # Third step: evaluate the improved factor
     if obs["budget_left"] == 2:
         return {"type": "EVALUATE"}
@@ -43,17 +47,21 @@ def llm_call(prompt: str) -> str:
     if budget_left == 4:
         return json.dumps({"type": "OBSERVE", "tool": "describe_data"})
     elif budget_left == 3:
-        # Create a simple momentum factor
-        new_factor = {
+        # Create a complete new factor program
+        new_program = {
             "nodes": [
-                {"id": "x0", "op": "rolling_return", "n": 63},
-                {"id": "x1", "op": "rolling_return", "n": 5},
+                {"id": "x0", "op": "rolling_return", "n": 126},
+                {"id": "x1", "op": "rolling_return", "n": 21},
                 {"id": "x2", "op": "sub", "a": "x0", "b": "x1"},
-                {"id": "score", "op": "zscore_xs", "src": "x2"}
+                {"id": "x3", "op": "rolling_return", "n": 63},
+                {"id": "x4", "op": "ema", "n": 10, "src": "x3"},
+                {"id": "x5", "op": "add", "a": "x2", "b": "x4"},
+                {"id": "x6", "op": "winsor_quantile", "src": "x5", "q": 0.02},
+                {"id": "score", "op": "zscore_xs", "src": "x6"}
             ],
             "output": "score"
         }
-        return json.dumps({"type": "FACTOR_IMPROVE", "new_factor": new_factor, "weight": 0.3})
+        return json.dumps({"type": "FACTOR_IMPROVE", "new_program": new_program})
     elif budget_left == 2:
         return json.dumps({"type": "EVALUATE"})
     else:

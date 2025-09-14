@@ -82,8 +82,8 @@ def test_factor_improve_action():
     env = FactorImproveEnv()
     obs, _ = env.reset()
     
-    # Create a new factor to add
-    new_factor = {
+    # Create a new complete factor program
+    new_program = {
         "nodes": [
             {"id": "x0", "op": "rolling_return", "n": 63},
             {"id": "x1", "op": "rolling_return", "n": 5},
@@ -93,7 +93,7 @@ def test_factor_improve_action():
         "output": "score"
     }
     
-    action = {"type": "FACTOR_IMPROVE", "new_factor": new_factor, "weight": 0.3}
+    action = {"type": "FACTOR_IMPROVE", "new_program": new_program}
     is_valid, errors = validate_action(action)
     print(f"1. Action valid: {is_valid}")
     if errors:
@@ -136,7 +136,7 @@ def test_full_episode():
     
     # Step 2: Improve factor
     print("Step 2: Improving factor...")
-    new_factor = {
+    new_program = {
         "nodes": [
             {"id": "x0", "op": "rolling_return", "n": 42},
             {"id": "x1", "op": "ema", "n": 10, "src": "x0"},
@@ -144,7 +144,7 @@ def test_full_episode():
         ],
         "output": "score"
     }
-    action = {"type": "FACTOR_IMPROVE", "new_factor": new_factor, "weight": 0.4}
+    action = {"type": "FACTOR_IMPROVE", "new_program": new_program}
     obs, reward, done, _, info = env.step(action)
     print(f"   Reward: {reward:.3f}, Budget left: {obs['budget_left']}")
     if "improvement" in obs["last_eval"]:
@@ -186,8 +186,8 @@ def test_invalid_actions():
     print()
     
     # Test invalid FACTOR_IMPROVE action
-    print("2. Invalid FACTOR_IMPROVE action (missing weight):")
-    action = {"type": "FACTOR_IMPROVE", "new_factor": {"nodes": [], "output": "score"}}
+    print("2. Invalid FACTOR_IMPROVE action (missing new_program):")
+    action = {"type": "FACTOR_IMPROVE"}
     is_valid, errors = validate_action(action)
     print(f"   Valid: {is_valid}")
     print(f"   Errors: {errors}")

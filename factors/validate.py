@@ -253,50 +253,6 @@ def validate_action(action: Dict[str, Any]) -> Tuple[bool, List[str]]:
     
     action_type = action["type"]
     
-    # if action_type == "SET_PROGRAM":
-    #     if "program" not in action:
-    #         errors.append("SET_PROGRAM action missing 'program' key")
-    #     else:
-    #         is_valid, prog_errors = validate_program(action["program"])
-    #         if not is_valid:
-    #             errors.extend([f"Program validation failed: {err}" for err in prog_errors])
-    
-    # elif action_type == "SET_PARAMS":
-    #     if "params" not in action:
-    #         errors.append("SET_PARAMS action missing 'params' key")
-    #     else:
-    #         params = action["params"]
-    #         if not isinstance(params, dict):
-    #             errors.append("SET_PARAMS params must be a dictionary")
-    #         else:
-    #             # Validate parameter ranges
-    #             if "top_q" in params:
-    #                 q = params["top_q"]
-    #                 if not isinstance(q, (int, float)) or q <= 0 or q >= 0.5:
-    #                     errors.append("top_q must be between 0 and 0.5")
-                
-    #             if "turnover_cap" in params:
-    #                 tc = params["turnover_cap"]
-    #                 if not isinstance(tc, (int, float)) or tc <= 0:
-    #                     errors.append("turnover_cap must be positive")
-                
-    #             if "delay_days" in params:
-    #                 dd = params["delay_days"]
-    #                 if not isinstance(dd, int) or dd < 0:
-    #                     errors.append("delay_days must be a non-negative integer")
-    
-    # elif action_type == "EVALUATE":
-    #     # No additional validation needed
-    #     pass
-    
-    # elif action_type == "REFLECT":
-    #     if "note" not in action:
-    #         errors.append("REFLECT action missing 'note' key")
-    
-    # elif action_type == "STOP":
-    #     # No additional validation needed
-    #     pass
-    
     if action_type == "OBSERVE":
         if "tool" not in action:
             errors.append("OBSERVE action missing 'tool' key")
@@ -312,20 +268,25 @@ def validate_action(action: Dict[str, Any]) -> Tuple[bool, List[str]]:
                     errors.append("analyze_factor_performance requires 'factor_program' parameter")
     
     elif action_type == "FACTOR_IMPROVE":
-        if "new_factor" not in action:
-            errors.append("FACTOR_IMPROVE action missing 'new_factor' key")
+        if "new_program" not in action:
+            errors.append("FACTOR_IMPROVE action missing 'new_program' key")
         else:
-            # Validate the new factor program
-            is_valid, prog_errors = validate_program(action["new_factor"])
+            # Validate the new program
+            is_valid, prog_errors = validate_program(action["new_program"])
             if not is_valid:
-                errors.extend([f"New factor validation failed: {err}" for err in prog_errors])
-        
-        if "weight" not in action:
-            errors.append("FACTOR_IMPROVE action missing 'weight' key")
-        else:
-            weight = action["weight"]
-            if not isinstance(weight, (int, float)) or weight <= 0 or weight > 1:
-                errors.append("weight must be a number between 0 and 1")
+                errors.extend([f"New program validation failed: {err}" for err in prog_errors])
+    
+    elif action_type == "EVALUATE":
+        # No additional validation needed
+        pass
+    
+    elif action_type == "REFLECT":
+        if "note" not in action:
+            errors.append("REFLECT action missing 'note' key")
+    
+    elif action_type == "STOP":
+        # No additional validation needed
+        pass
     
     else:
         errors.append(f"Unknown action type: {action_type}")

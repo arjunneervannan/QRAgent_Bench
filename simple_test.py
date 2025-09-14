@@ -36,7 +36,7 @@ def test_basic_functionality():
     
     # Test FACTOR_IMPROVE action
     print("\nTesting FACTOR_IMPROVE action...")
-    new_factor = {
+    new_program = {
         "nodes": [
             {"id": "x0", "op": "rolling_return", "n": 63},
             {"id": "score", "op": "zscore_xs", "src": "x0"}
@@ -44,7 +44,7 @@ def test_basic_functionality():
         "output": "score"
     }
     
-    action = {"type": "FACTOR_IMPROVE", "new_factor": new_factor, "weight": 0.3}
+    action = {"type": "FACTOR_IMPROVE", "new_program": new_program}
     obs, reward, done, _, info = env.step(action)
     
     print(f"✓ FACTOR_IMPROVE action executed")
