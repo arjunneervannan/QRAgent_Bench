@@ -32,11 +32,12 @@ QRAgent_Bench/
 ├── engine/                  # Backtesting and data processing
 │   ├── backtester.py       # Cross-sectional backtesting engine
 │   ├── data_loader.py      # Data loading and preprocessing
+│   ├── data_analysis.py    # Data analysis and visualization tools
 │   └── metrics.py          # Performance metrics calculation
 ├── envs/                    # Environment implementations
 │   └── factor_env.py       # Enhanced factor improvement environment
 ├── factors/                 # Factor definition and validation
-│   ├── program.py          # Factor DSL implementation and tools
+│   ├── program.py          # Factor DSL implementation (core operations only)
 │   ├── validate.py         # Action and program validation
 │   ├── baseline_program.json    # Baseline factor definition
 │   └── candidate_program.json   # Current candidate factor
@@ -136,6 +137,23 @@ The project uses a JSON-based Domain Specific Language for defining factors:
 - **Cross-Sectional**: `zscore_xs`, `demean_xs`, `winsor_quantile`
 - **Mathematical**: `add`, `sub`, `mul`, `clip`
 - **Combination**: `combine` (weighted combination of multiple factors)
+
+## 📊 Data Analysis Tools
+
+The `engine/data_analysis.py` module provides comprehensive data analysis capabilities:
+
+### Core Functions
+- **`describe_data()`** - Basic dataset statistics and information
+- **`plot_returns()`** - Portfolio return visualizations
+- **`analyze_factor_performance()`** - Factor performance analysis with IC statistics
+- **`plot_factor_analysis()`** - Comprehensive factor analysis plots
+- **`get_data_summary()`** - Detailed dataset summary with portfolio statistics
+
+### Analysis Features
+- **Statistical Analysis**: Mean, std, skewness, kurtosis, correlations
+- **Performance Metrics**: Sharpe ratios, Information Coefficient (IC), IC Information Ratio
+- **Visualization**: Cumulative returns, distributions, correlation heatmaps, rolling metrics
+- **Portfolio Analysis**: Individual portfolio statistics and cross-portfolio correlations
 
 ## 📊 Action Types
 

@@ -7,7 +7,7 @@ Tests OBSERVE and FACTOR_IMPROVE actions.
 import json
 import numpy as np
 from envs.factor_env import FactorImproveEnv
-from factors.program import describe_data, plot_returns, analyze_factor_performance
+from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action
 
 def test_observe_actions():

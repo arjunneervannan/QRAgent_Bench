@@ -5,7 +5,8 @@ from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
 from engine.backtester import cross_sectional_ls, run_in_sample_backtest
-from factors.program import evaluate_program, describe_data, plot_returns, analyze_factor_performance
+from factors.program import evaluate_program
+from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
 
 class FactorImproveEnv(gym.Env):

@@ -7,6 +7,7 @@ Demonstrates the new prompt system and full DAG factor improvement.
 import json
 from envs.factor_env import FactorImproveEnv
 from agent.prompt import PromptBuilder
+from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 
 def demonstrate_prompt_system():
     """Demonstrate the different prompt types."""
