@@ -2,6 +2,29 @@ from __future__ import annotations
 import json
 from typing import Dict, Any, Optional
 
+# System prompt that provides context about the agent's role and capabilities
+SYSTEM_PROMPT = """You are an expert quantitative researcher specializing in factor-based investment strategies. Your role is to analyze financial data and develop sophisticated factor models that can predict stock returns.
+
+CORE CAPABILITIES:
+- Analyze portfolio return data using statistical tools
+- Design factor models using a JSON-based Domain Specific Language (DSL)
+- Evaluate factor performance through backtesting
+- Iteratively improve factor strategies based on performance feedback
+
+FACTOR MODELING EXPERTISE:
+- Understand momentum, mean reversion, and other factor patterns
+- Design cross-sectional and time-series factor signals
+- Combine multiple signals using mathematical operations
+- Apply proper normalization and risk controls
+
+PERFORMANCE OBJECTIVES:
+- Maximize out-of-sample Sharpe ratio
+- Control turnover and transaction costs
+- Avoid data leakage and overfitting
+- Ensure factor signals are economically meaningful
+
+You have access to observation tools for data analysis and can propose complete factor programs. Your goal is to develop robust, profitable factor strategies through systematic analysis and iteration."""
+
 ACTION_SCHEMA = """
 Valid actions (emit exactly ONE JSON object per step):
 - OBSERVE:     {"type":"OBSERVE","tool":"<tool_name>","<params>":<values>}
@@ -10,7 +33,6 @@ Valid actions (emit exactly ONE JSON object per step):
   - "plot_returns": {"type":"OBSERVE","tool":"plot_returns"}
   - "analyze_factor_performance": {"type":"OBSERVE","tool":"analyze_factor_performance","factor_program":{...DSL JSON...}}
 - FACTOR_IMPROVE: {"type":"FACTOR_IMPROVE","new_program":{...DSL JSON...}}
-- EVALUATE:    {"type":"EVALUATE"}
 - REFLECT:     {"type":"REFLECT","note":"<brief reasoning>"}
 - STOP:        {"type":"STOP"}
 """
@@ -20,12 +42,13 @@ class PromptBuilder:
     
     def __init__(self):
         self.action_schema = ACTION_SCHEMA
+        self.system_prompt = SYSTEM_PROMPT
     
     def build_basic_prompt(self, task_card: str, last_obs: Dict[str, Any]) -> str:
         """Build a basic prompt that gives the agent options to OBSERVE or FACTOR_IMPROVE."""
-        return f"""Task: {task_card}
+        return f"""{self.system_prompt}
 
-You are a quantitative finance agent tasked with improving factor strategies. You have access to observation tools and can propose new factor programs.
+TASK: {task_card}
 
 {self.action_schema}
 
@@ -39,14 +62,13 @@ CURRENT STATE:
 AVAILABLE ACTIONS:
 1. OBSERVE - Analyze the dataset or current factor performance
 2. FACTOR_IMPROVE - Propose a new complete factor program (DAG)
-3. EVALUATE - Run out-of-sample evaluation
-4. REFLECT - Add reasoning notes
-5. STOP - End the episode
+3. REFLECT - Add reasoning notes
+4. STOP - End the episode (triggers automatic evaluation)
 
 Think about what would be most helpful given the current state. Consider:
 - Do you need more information about the data or current factor?
 - Can you propose a better factor program?
-- Are you ready for final evaluation?
+- Are you ready to end the episode for evaluation?
 
 Output ONE JSON action with no extra text.
 Action JSON:
@@ -58,7 +80,9 @@ Action JSON:
         if context:
             context_str = f"\nCONTEXT:\n{json.dumps(context, indent=2)}\n"
         
-        return f"""You received the following response from the system:
+        return f"""{self.system_prompt}
+
+You received the following response from the system:
 
 {response}
 {context_str}
@@ -76,7 +100,9 @@ Action JSON:
 
     def build_observation_prompt(self, tool: str, result: Any, context: Dict[str, Any]) -> str:
         """Build a prompt after an observation tool has been executed."""
-        return f"""You just executed the {tool} tool and received the following result:
+        return f"""{self.system_prompt}
+
+You just executed the {tool} tool and received the following result:
 
 {json.dumps(result, indent=2)}
 
@@ -95,7 +121,9 @@ Action JSON:
 
     def build_improvement_prompt(self, improvement_result: Dict[str, Any], context: Dict[str, Any]) -> str:
         """Build a prompt after a factor improvement has been made."""
-        return f"""You just improved the factor and received the following results:
+        return f"""{self.system_prompt}
+
+You just improved the factor and received the following results:
 
 IMPROVEMENT RESULTS:
 - In-sample Sharpe: {improvement_result.get('sharpe_net', 0):.3f}
@@ -119,22 +147,25 @@ Output ONE JSON action with no extra text.
 Action JSON:
 """
 
-    def build_evaluation_prompt(self, eval_result: Dict[str, Any], context: Dict[str, Any]) -> str:
-        """Build a prompt after evaluation has been completed."""
-        return f"""You just completed the out-of-sample evaluation with these results:
+    def build_final_evaluation_prompt(self, eval_result: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """Build a prompt after the final evaluation has been completed (for reflection only)."""
+        return f"""{self.system_prompt}
 
-EVALUATION RESULTS:
+The episode has concluded with the following final evaluation results:
+
+FINAL EVALUATION RESULTS:
 - OOS Sharpe: {eval_result.get('oos_sharpe', 0):.3f}
 - Turnover: {eval_result.get('turnover', 0):.3f}
 - Tests pass: {eval_result.get('tests_pass', False)}
 - Leakage detected: {eval_result.get('leak', False)}
 
-FINAL EPISODE SUMMARY:
+EPISODE SUMMARY:
 - Total episode rewards: {context.get('episode_rewards', [])}
 - Incremental rewards: {context.get('incremental_rewards', [])}
 - Final OOS Sharpe: {eval_result.get('oos_sharpe', 0):.3f}
 
-This episode is complete. You should STOP.
+This episode is complete. The evaluation was performed automatically when you chose to STOP.
+You can use REFLECT to add any final thoughts about your strategy.
 
 {self.action_schema}
 
@@ -142,8 +173,8 @@ Output ONE JSON action with no extra text.
 Action JSON:
 """
 
-# Legacy function for backward compatibility
+# Backward compatibility function
 def build_prompt(task_card: str, last_obs: dict) -> str:
-    """Legacy function - use PromptBuilder.build_basic_prompt instead."""
+    """Build a basic prompt for backward compatibility."""
     builder = PromptBuilder()
     return builder.build_basic_prompt(task_card, last_obs)

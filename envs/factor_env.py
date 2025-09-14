@@ -244,8 +244,19 @@ class FactorImproveEnv(gym.Env):
                 reward = -1.0
 
 
-        elif atype == "EVALUATE":
-            # Run OOS backtest
+
+        elif atype == "REFLECT":
+            self.last_eval = {
+                "oos_sharpe": 0.0,
+                "turnover": 0.0,
+                "tests_pass": True,
+                "leak": False,
+                "reflection": action.get("note", "")
+            }
+            reward = 0.0
+
+        elif atype == "STOP":
+            # Automatically run OOS evaluation when agent chooses to stop
             oos_results = self._run_oos_backtest(self.current_program)
             
             d_sharpe = oos_results["sharpe_net"]
@@ -277,20 +288,8 @@ class FactorImproveEnv(gym.Env):
             # Add incremental rewards
             if self.incremental_rewards:
                 reward += sum(self.incremental_rewards) * 0.1  # Scale down incremental rewards
-
-        elif atype == "REFLECT":
-            self.last_eval = {
-                "oos_sharpe": 0.0,
-                "turnover": 0.0,
-                "tests_pass": True,
-                "leak": False,
-                "reflection": action.get("note", "")
-            }
-            reward = 0.0
-
-        elif atype == "STOP":
+            
             terminated = True
-            reward = 0.0
 
         # Track episode rewards
         self.episode_rewards.append(reward)

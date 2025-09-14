@@ -163,10 +163,14 @@ The `engine/data_analysis.py` module provides comprehensive data analysis capabi
 - `analyze_factor_performance`: Analyze factor performance characteristics
 
 ### FACTOR_IMPROVE Actions
-- Add new factors to existing models
-- Specify combination weights (0-1)
+- Propose complete new factor programs (DAGs)
 - Automatic in-sample backtesting
 - Performance improvement tracking
+
+### Automatic Evaluation
+- **STOP action** triggers automatic out-of-sample evaluation
+- No manual EVALUATE action needed
+- Final performance metrics calculated automatically
 
 ## 🎮 Environment Features
 

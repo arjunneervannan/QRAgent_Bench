@@ -26,10 +26,7 @@ def simple_policy(obs: dict) -> dict:
             "output": "score"
         }
         return {"type": "FACTOR_IMPROVE", "new_program": new_program}
-    # Third step: evaluate the improved factor
-    if obs["budget_left"] == 2:
-        return {"type": "EVALUATE"}
-    # Final step: stop
+    # Final step: stop (triggers automatic evaluation)
     return {"type": "STOP"}
 
 def llm_call(prompt: str) -> str:
@@ -62,8 +59,6 @@ def llm_call(prompt: str) -> str:
             "output": "score"
         }
         return json.dumps({"type": "FACTOR_IMPROVE", "new_program": new_program})
-    elif budget_left == 2:
-        return json.dumps({"type": "EVALUATE"})
     else:
         return json.dumps({"type": "STOP"})
 

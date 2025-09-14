@@ -151,21 +151,14 @@ def test_full_episode():
         print(f"   Improvement: {obs['last_eval']['improvement']:.3f}")
     print()
     
-    # Step 3: Evaluate OOS
-    print("Step 3: Evaluating out-of-sample...")
-    action = {"type": "EVALUATE"}
-    obs, reward, done, _, info = env.step(action)
-    print(f"   Reward: {reward:.3f}, Budget left: {obs['budget_left']}")
-    print(f"   OOS Sharpe: {obs['last_eval']['oos_sharpe']:.3f}")
-    print(f"   Turnover: {obs['last_eval']['turnover']:.3f}")
-    print(f"   Tests pass: {obs['last_eval']['tests_pass']}")
-    print()
-    
-    # Step 4: Stop
-    print("Step 4: Stopping...")
+    # Step 3: Stop (triggers automatic evaluation)
+    print("Step 3: Stopping (triggers automatic evaluation)...")
     action = {"type": "STOP"}
     obs, reward, done, _, info = env.step(action)
     print(f"   Reward: {reward:.3f}, Done: {done}")
+    print(f"   OOS Sharpe: {obs['last_eval']['oos_sharpe']:.3f}")
+    print(f"   Turnover: {obs['last_eval']['turnover']:.3f}")
+    print(f"   Tests pass: {obs['last_eval']['tests_pass']}")
     print()
     
     print("Final episode summary:")

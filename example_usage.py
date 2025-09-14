@@ -107,21 +107,14 @@ def demonstrate_full_episode():
         print(f"In-sample Sharpe: {results['sharpe_net']:.3f}")
         print(f"Improvement: {obs['last_eval']['improvement']:.3f}")
     
-    # Step 3: Evaluate OOS
-    print("\n--- Step 3: Evaluating Out-of-Sample ---")
-    action = {"type": "EVALUATE"}
-    obs, reward, done, _, info = env.step(action)
-    print(f"Action: {action}")
-    print(f"Reward: {reward:.3f}, Budget: {obs['budget_left']}")
-    print(f"OOS Sharpe: {obs['last_eval']['oos_sharpe']:.3f}")
-    print(f"Turnover: {obs['last_eval']['turnover']:.3f}")
-    
-    # Step 4: Stop
-    print("\n--- Step 4: Stopping ---")
+    # Step 3: Stop (triggers automatic evaluation)
+    print("\n--- Step 3: Stopping (triggers automatic evaluation) ---")
     action = {"type": "STOP"}
     obs, reward, done, _, info = env.step(action)
     print(f"Action: {action}")
     print(f"Reward: {reward:.3f}, Done: {done}")
+    print(f"OOS Sharpe: {obs['last_eval']['oos_sharpe']:.3f}")
+    print(f"Turnover: {obs['last_eval']['turnover']:.3f}")
     
     print(f"\nFinal Summary:")
     print(f"  Episode rewards: {obs['episode_rewards']}")

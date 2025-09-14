@@ -276,9 +276,6 @@ def validate_action(action: Dict[str, Any]) -> Tuple[bool, List[str]]:
             if not is_valid:
                 errors.extend([f"New program validation failed: {err}" for err in prog_errors])
     
-    elif action_type == "EVALUATE":
-        # No additional validation needed
-        pass
     
     elif action_type == "REFLECT":
         if "note" not in action:
