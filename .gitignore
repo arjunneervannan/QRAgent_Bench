@@ -1,8 +1,9 @@
-# Python
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -16,13 +17,33 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
-# Virtual environments
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
 .env
 .venv
 env/
@@ -36,45 +57,14 @@ venv.bak/
 .idea/
 *.swp
 *.swo
-*~
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Data files (keep structure but ignore large data)
-data/*.csv
-data/*.parquet
-data/*.h5
-data/*.hdf5
-!data/.gitkeep
-
-# Model files
-models/
-checkpoints/
-*.pkl
-*.pickle
-
-# Generated plots and images
-*.png
-*.jpg
-*.jpeg
-*.pdf
-temp_*.png
-backtest_results_*.png
-
-# Logs
-*.log
-logs/
 
 # OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
+# Project specific
+training_results.json
+*.png
+temp_*.png
+backtest_results_*.png
+factor_analysis_*.png

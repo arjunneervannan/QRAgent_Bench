@@ -13,18 +13,25 @@ class FactorImproveEnv(gym.Env):
     """Enhanced environment for factor improvement with OBSERVE and FACTOR_IMPROVE actions."""
     metadata = {"render_modes": []}
 
-    def __init__(self, data_path: str = "data/ff25_daily.csv", is_frac: float = 0.8):
+    def __init__(self, data_path: str = "data/ff25_daily.csv", is_frac: float = 0.8, timesteps = 20):
         super().__init__()
-        self.data_path = data_path
+        
+        # Get the project root directory (where this file is located)
+        project_root = Path(__file__).parent.parent
+        
+        # Use absolute paths
+        self.data_path = str(project_root / data_path)
         self.returns = load_ff25_daily(self.data_path)
         self.split = int(is_frac * len(self.returns))
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
-        self.budget = 4
+        self.timesteps = timesteps
+        self.budget = timesteps
         self.steps_used = 0
         self.last_eval = {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False}
         
-        # Load baseline factor
-        self.baseline_program = json.loads(Path("factors/baseline_program.json").read_text())
+        # Load baseline factor using absolute path
+        baseline_path = project_root / "factors" / "baseline_program.json"
+        self.baseline_program = json.loads(baseline_path.read_text())
         self.current_program = self.baseline_program.copy()
         
         # Reward tracking
@@ -60,7 +67,7 @@ class FactorImproveEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.budget = 4
+        self.budget = self.timesteps
         self.steps_used = 0
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
         self.last_eval = {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False}
@@ -96,7 +103,9 @@ class FactorImproveEnv(gym.Env):
         
         # Set the new program
         self.current_program = program
-        Path("factors/candidate_program.json").write_text(json.dumps(program, indent=2))
+        project_root = Path(__file__).parent.parent
+        candidate_path = project_root / "factors" / "candidate_program.json"
+        candidate_path.write_text(json.dumps(program, indent=2))
         
         return True
 
@@ -144,39 +153,27 @@ class FactorImproveEnv(gym.Env):
             return self._obs(), reward, terminated, False, info
 
         atype = action.get("type")
-        
+
         if atype == "OBSERVE":
             tool = action.get("tool")
             if tool in self.observation_tools:
-                try:
-                    # Execute the observation tool
-                    if tool == "analyze_factor_performance":
-                        result = self.observation_tools[tool](factor_program=action.get("factor_program"))
-                    else:
-                        result = self.observation_tools[tool]()
-                    
-                    self.last_eval = {
-                        "oos_sharpe": 0.0,
-                        "turnover": 0.0,
-                        "tests_pass": True,
-                        "leak": False,
-                        "observation_result": result,
-                        "observation_tool": tool
-                    }
-                    
-                    # Small positive reward for successful observation
-                    reward = 0.1
-                    
-                except Exception as e:
-                    self.last_eval = {
-                        "oos_sharpe": 0.0,
-                        "turnover": 0.0,
-                        "tests_pass": False,
-                        "leak": False,
-                        "observation_error": str(e),
-                        "observation_tool": tool
-                    }
-                    reward = -0.5
+                # Execute the observation tool
+                if tool == "analyze_factor_performance":
+                    result = self.observation_tools[tool](factor_program=action.get("factor_program"))
+                else:
+                    result = self.observation_tools[tool]()
+                
+                self.last_eval = {
+                    "oos_sharpe": 0.0,
+                    "turnover": 0.0,
+                    "tests_pass": True,
+                    "leak": False,
+                    "observation_result": result,
+                    "observation_tool": tool
+                }
+                
+                # Small positive reward for successful observation
+                reward = 0.1
             else:
                 self.last_eval = {
                     "oos_sharpe": 0.0,
@@ -188,60 +185,49 @@ class FactorImproveEnv(gym.Env):
                 reward = -1.0
 
         elif atype == "FACTOR_IMPROVE":
-            try:
-                new_program = action.get("new_program")
-                
-                # Validate and set the new program
-                self._validate_and_set_program(new_program)
-                
-                # Run in-sample backtest
-                is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
-                
-                # Update current performance
-                self.current_performance = is_results
-                
-                # Calculate incremental reward
-                if self.baseline_performance is None:
-                    # First improvement - set baseline
-                    self.baseline_performance = self._run_in_sample_backtest(self.baseline_program)
-                
-                baseline_sharpe = self.baseline_performance["sharpe_net"]
-                current_sharpe = is_results["sharpe_net"]
-                improvement = current_sharpe - baseline_sharpe
-                
-                # Reward based on improvement
-                incremental_reward = improvement * 2.0  # Scale factor
-                self.incremental_rewards.append(incremental_reward)
-                
-                self.last_eval = {
-                    "oos_sharpe": float(is_results["sharpe_net"]),
-                    "turnover": float(is_results["avg_turnover"]),
-                    "tests_pass": not is_results["leakage_flag"],
-                    "leak": bool(is_results["leakage_flag"]),
-                    "in_sample_results": {
-                        "sharpe_gross": float(is_results["sharpe_gross"]),
-                        "sharpe_net": float(is_results["sharpe_net"]),
-                        "sortino_net": float(is_results["sortino_net"]),
-                        "max_dd": float(is_results["max_dd"]),
-                        "avg_turnover": float(is_results["avg_turnover"]),
-                        "plot_path": is_results.get("plot_path")
-                    },
-                    "improvement": float(improvement),
-                    "incremental_reward": float(incremental_reward),
-                    "program_updated": True
-                }
-                
-                reward = incremental_reward
-                
-            except Exception as e:
-                self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
-                    "tests_pass": False,
-                    "leak": False,
-                    "factor_improve_error": str(e)
-                }
-                reward = -1.0
+            new_program = action.get("new_program")
+            
+            # Validate and set the new program
+            self._validate_and_set_program(new_program)
+            
+            # Run in-sample backtest
+            is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
+            
+            # Update current performance
+            self.current_performance = is_results
+            
+            # Calculate incremental reward
+            if self.baseline_performance is None:
+                # First improvement - set baseline
+                self.baseline_performance = self._run_in_sample_backtest(self.baseline_program)
+            
+            baseline_sharpe = self.baseline_performance["sharpe_net"]
+            current_sharpe = is_results["sharpe_net"]
+            improvement = current_sharpe - baseline_sharpe
+            
+            # Reward based on improvement
+            incremental_reward = improvement * 2.0  # Scale factor
+            self.incremental_rewards.append(incremental_reward)
+            
+            self.last_eval = {
+                "oos_sharpe": float(is_results["sharpe_net"]),
+                "turnover": float(is_results["avg_turnover"]),
+                "tests_pass": not is_results["leakage_flag"],
+                "leak": bool(is_results["leakage_flag"]),
+                "in_sample_results": {
+                    "sharpe_gross": float(is_results["sharpe_gross"]),
+                    "sharpe_net": float(is_results["sharpe_net"]),
+                    "sortino_net": float(is_results["sortino_net"]),
+                    "max_dd": float(is_results["max_dd"]),
+                    "avg_turnover": float(is_results["avg_turnover"]),
+                    "plot_path": is_results.get("plot_path")
+                },
+                "improvement": float(improvement),
+                "incremental_reward": float(incremental_reward),
+                "program_updated": True
+            }
+            
+            reward = incremental_reward
 
         elif atype == "REFLECT":
             self.last_eval = {

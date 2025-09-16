@@ -14,8 +14,8 @@ def load_ff25_daily(path: str | Path = "data/ff25_daily.csv") -> pd.DataFrame:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Data file not found: {path}{FF_HELP}")
-    # Read generously
-    df = pd.read_csv(path)
+    # Read generously with low_memory=False to avoid mixed type warnings
+    df = pd.read_csv(path, low_memory=False)
     # Identify date column
     date_col = None
     for cand in ["date", "Date", "DATE"]:

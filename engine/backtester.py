@@ -62,8 +62,11 @@ def cross_sectional_ls(
             w = prev_w + (w - prev_w) * (turnover_cap / raw_turn)
 
         # Hold weights until next rebalance
-        weights.loc[t0:t1, :] = w
-        prev_w = w
+        # Ensure w is properly aligned with weights columns
+        w_aligned = w.reindex(weights.columns, fill_value=0.0)
+        # Use values to avoid broadcasting issues
+        weights.loc[t0:t1, :] = w_aligned.values
+        prev_w = w_aligned
 
     # Execution delay to avoid look-ahead
     weights = weights.shift(delay_days).fillna(0.0)
@@ -89,7 +92,7 @@ def cross_sectional_ls(
 
 def plot_backtest_results(backtest_results: dict, title: str = "Backtest Results") -> str:
     """Generate comprehensive plots of backtest results and save as image."""
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 3, figsize=(24, 16))
     fig.suptitle(title, fontsize=16)
     
     # 1. Cumulative returns

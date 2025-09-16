@@ -186,6 +186,10 @@ def run_training_episode(env: FactorImproveEnv, agent: RandomAgent,
             print(f"  Reward: {reward:.3f}, Budget left: {obs['budget_left']}")
             if 'improvement' in obs.get('last_eval', {}):
                 print(f"  Improvement: {obs['last_eval']['improvement']:.3f}")
+            if 'factor_improve_error' in obs.get('last_eval', {}):
+                print(f"  ❌ FACTOR_IMPROVE ERROR: {obs['last_eval']['factor_improve_error']}")
+            if 'validation_errors' in obs.get('last_eval', {}):
+                print(f"  ❌ VALIDATION ERROR: {obs['last_eval']['validation_errors']}")
         
         if done:
             break
@@ -208,6 +212,7 @@ def main():
     """Main training loop."""
     print("QRAgent_Bench - Simple Training Loop")
     print("="*50)
+    print("Starting main function...")
     
     # Initialize environment
     try:
@@ -223,7 +228,7 @@ def main():
     logger = TrainingLogger()
     
     # Training parameters
-    num_episodes = 10
+    num_episodes = 3
     verbose = True
     
     print(f"Starting training for {num_episodes} episodes...")
