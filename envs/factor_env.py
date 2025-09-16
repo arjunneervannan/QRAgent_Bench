@@ -243,8 +243,6 @@ class FactorImproveEnv(gym.Env):
                 }
                 reward = -1.0
 
-
-
         elif atype == "REFLECT":
             self.last_eval = {
                 "oos_sharpe": 0.0,
@@ -273,7 +271,7 @@ class FactorImproveEnv(gym.Env):
                     "sharpe_gross": float(oos_results["sharpe_gross"]),
                     "sharpe_net": float(oos_results["sharpe_net"]),
                     "sortino_net": float(oos_results["sortino_net"]),
-                    "max_dd": float(oos_results["max_dd"]),
+                    "max_dd": float(oos_resultx_dd"]),
                     "avg_turnover": float(oos_results["avg_turnover"])
                 }
             }
@@ -300,4 +298,3 @@ class FactorImproveEnv(gym.Env):
             terminated = True
 
         return self._obs(), reward, terminated, False, info
-        
