@@ -271,7 +271,7 @@ class FactorImproveEnv(gym.Env):
                     "sharpe_gross": float(oos_results["sharpe_gross"]),
                     "sharpe_net": float(oos_results["sharpe_net"]),
                     "sortino_net": float(oos_results["sortino_net"]),
-                    "max_dd": float(oos_resultx_dd"]),
+                    "max_dd": float(oos_results["max_dd"]),
                     "avg_turnover": float(oos_results["avg_turnover"])
                 }
             }
