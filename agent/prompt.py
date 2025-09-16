@@ -46,6 +46,7 @@ class PromptBuilder:
     
     def build_basic_prompt(self, task_card: str, last_obs: Dict[str, Any]) -> str:
         """Build a basic prompt that gives the agent options to OBSERVE or FACTOR_IMPROVE."""
+        
         return f"""{self.system_prompt}
 
 TASK: {task_card}
@@ -58,12 +59,6 @@ CURRENT STATE:
 - Last evaluation: {json.dumps(last_obs.get('last_eval', {}), indent=2)}
 - Baseline performance: {json.dumps(last_obs.get('baseline_performance', {}), indent=2)}
 - Current performance: {json.dumps(last_obs.get('current_performance', {}), indent=2)}
-
-AVAILABLE ACTIONS:
-1. OBSERVE - Analyze the dataset or current factor performance
-2. FACTOR_IMPROVE - Propose a new complete factor program (DAG)
-3. REFLECT - Add reasoning notes
-4. STOP - End the episode (triggers automatic evaluation)
 
 Think about what would be most helpful given the current state. Consider:
 - Do you need more information about the data or current factor?
@@ -123,7 +118,7 @@ Action JSON:
         """Build a prompt after a factor improvement has been made."""
         return f"""{self.system_prompt}
 
-You just improved the factor and received the following results:
+You just edited the factor and received the following results:
 
 IMPROVEMENT RESULTS:
 - In-sample Sharpe: {improvement_result.get('sharpe_net', 0):.3f}
