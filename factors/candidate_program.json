@@ -3,13 +3,12 @@
     {
       "id": "x0",
       "op": "rolling_return",
-      "n": 52
+      "n": 60
     },
     {
       "id": "x1",
-      "op": "ema",
-      "n": 26,
-      "src": "x0"
+      "op": "rolling_return",
+      "n": 49
     },
     {
       "id": "x2",

@@ -110,16 +110,38 @@ class FactorImproveEnv(gym.Env):
         return True
 
     def _run_in_sample_backtest(self, program, generate_plot=False):
-        """Run in-sample backtest on the given program."""
+        """Run in-sample backtest on the given program with random 10-year sampling."""
         scores = evaluate_program(program, self.returns)
         ret_is = self.returns.iloc[:self.split]
         sc_is = scores.iloc[:self.split]
+        
+        # Select a random 10-year period from the in-sample data
+        ret_is, sc_is = self._sample_10_year_period(ret_is, sc_is)
         
         return run_in_sample_backtest(
             ret_is, sc_is, 
             generate_plot=generate_plot,
             **self.params
         )
+    
+    def _sample_10_year_period(self, returns, scores):
+        """Sample a random 10-year period from the data."""
+        # Calculate 10 years in trading days (approximately 252 days per year)
+        ten_years_days = 252 * 10
+        
+        # If we don't have enough data, return what we have
+        if len(returns) <= ten_years_days:
+            return returns, scores
+        
+        # Calculate the maximum start index to ensure we can get 10 years
+        max_start_idx = len(returns) - ten_years_days
+        
+        # Select a random start index
+        start_idx = np.random.randint(0, max_start_idx + 1)
+        end_idx = start_idx + ten_years_days
+        
+        # Return the sampled data
+        return returns.iloc[start_idx:end_idx], scores.iloc[start_idx:end_idx]
 
     def _run_oos_backtest(self, program):
         """Run out-of-sample backtest on the given program."""
