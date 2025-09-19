@@ -176,6 +176,7 @@ def run_training_episode(env: FactorImproveEnv, agent: RandomAgent,
         
         if verbose:
             print(f"Step {step_count + 1}: {action['type']}")
+            print(f"Action: {action}")
         
         # Environment step
         obs, reward, done, _, info = env.step(action)

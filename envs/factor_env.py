@@ -40,6 +40,9 @@ class FactorImproveEnv(gym.Env):
         self.baseline_performance = None
         self.current_performance = None
         
+        # Equal-weight baseline performance (calculated once)
+        self.equal_weight_baseline = None
+        
         # Observation tools available
         self.observation_tools = {
             "describe_data": self._describe_data,
@@ -56,7 +59,8 @@ class FactorImproveEnv(gym.Env):
             "baseline_performance": self.baseline_performance,
             "current_performance": self.current_performance,
             "episode_rewards": self.episode_rewards,
-            "incremental_rewards": self.incremental_rewards
+            "incremental_rewards": self.incremental_rewards,
+            "equal_weight_baseline": self.equal_weight_baseline
         }
         
         # Include validation errors if they exist
@@ -78,6 +82,7 @@ class FactorImproveEnv(gym.Env):
         self.incremental_rewards = []
         self.baseline_performance = None
         self.current_performance = None
+        self.equal_weight_baseline = None
         
         return self._obs(), {}
 
@@ -93,6 +98,60 @@ class FactorImproveEnv(gym.Env):
         """Execute analyze_factor_performance tool."""
         scores = evaluate_program(factor_program, self.returns)
         return analyze_factor_performance(scores, self.returns)
+    
+    def _calculate_equal_weight_baseline(self, returns_data):
+        """
+        Calculate equal-weight baseline performance with drift.
+        
+        For equal weight with drift:
+        - Start with equal weights (1/25 for each portfolio)
+        - Let weights drift based on returns: w_t+1 = w_t * (1 + r_t) / sum(w_t * (1 + r_t))
+        - This ensures weights sum to 1 but drift based on performance
+        
+        Args:
+            returns_data: DataFrame of returns
+            
+        Returns:
+            dict: Performance metrics similar to cross_sectional_ls output
+        """
+        import pandas as pd
+        
+        n_portfolios = returns_data.shape[1]
+        initial_weight = 1.0 / n_portfolios
+        
+        # Initialize weights
+        weights = pd.DataFrame(initial_weight, 
+                             index=returns_data.index, 
+                             columns=returns_data.columns)
+        
+        # Let weights drift based on returns
+        for i in range(1, len(returns_data)):
+            # Previous weights
+            prev_weights = weights.iloc[i-1]
+            
+            # Calculate new weights: w_t * (1 + r_t)
+            new_weights = prev_weights * (1 + returns_data.iloc[i])
+            
+            # Normalize to sum to 1 (drift)
+            weights.iloc[i] = new_weights / new_weights.sum()
+        
+        # Calculate strategy returns
+        strategy_returns = (weights * returns_data).sum(axis=1)
+        
+        # Calculate performance metrics
+        from engine.metrics import sharpe, sortino, max_drawdown
+        
+        return {
+            "weights": weights,
+            "series_gross": strategy_returns,
+            "series_net": strategy_returns,  # No transaction costs for equal weight
+            "sharpe_gross": sharpe(strategy_returns, "daily"),
+            "sharpe_net": sharpe(strategy_returns, "daily"),
+            "sortino_net": sortino(strategy_returns, "daily"),
+            "max_dd": max_drawdown((1.0 + strategy_returns).cumprod()),
+            "avg_turnover": float(weights.diff().abs().sum(axis=1).mean()),
+            "leakage_flag": False
+        }
 
     def _validate_and_set_program(self, program):
         """Validate and set the new program, replacing the current one entirely."""
@@ -118,11 +177,20 @@ class FactorImproveEnv(gym.Env):
         # Select a random 10-year period from the in-sample data
         ret_is, sc_is = self._sample_10_year_period(ret_is, sc_is)
         
-        return run_in_sample_backtest(
+        # Calculate equal-weight baseline for the same period
+        equal_weight_results = self._calculate_equal_weight_baseline(ret_is)
+        
+        # Run factor-based backtest
+        factor_results = run_in_sample_backtest(
             ret_is, sc_is, 
             generate_plot=generate_plot,
             **self.params
         )
+        
+        # Add equal-weight baseline to results
+        factor_results["equal_weight_baseline"] = equal_weight_results
+        
+        return factor_results
     
     def _sample_10_year_period(self, returns, scores):
         """Sample a random 10-year period from the data."""
@@ -149,7 +217,16 @@ class FactorImproveEnv(gym.Env):
         ret_oos = self.returns.iloc[self.split:]
         sc_oos = scores.iloc[self.split:]
         
-        return cross_sectional_ls(ret_oos, sc_oos, **self.params)
+        # Calculate equal-weight baseline for out-of-sample period
+        equal_weight_results = self._calculate_equal_weight_baseline(ret_oos)
+        
+        # Run factor-based backtest
+        factor_results = cross_sectional_ls(ret_oos, sc_oos, **self.params)
+        
+        # Add equal-weight baseline to results
+        factor_results["equal_weight_baseline"] = equal_weight_results
+        
+        return factor_results
 
     def step(self, action: dict):
         reward = 0.0
@@ -220,11 +297,17 @@ class FactorImproveEnv(gym.Env):
             
             # Calculate incremental reward
             if self.baseline_performance is None:
+                print("setting baseline performance")
                 # First improvement - set baseline
                 self.baseline_performance = self._run_in_sample_backtest(self.baseline_program)
             
+            # Set equal-weight baseline if not already set
+            if self.equal_weight_baseline is None:
+                self.equal_weight_baseline = is_results["equal_weight_baseline"]
+            
             baseline_sharpe = self.baseline_performance["sharpe_net"]
             current_sharpe = is_results["sharpe_net"]
+            equal_weight_sharpe = is_results["equal_weight_baseline"]["sharpe_net"]
             improvement = current_sharpe - baseline_sharpe
             
             # Reward based on improvement
@@ -243,6 +326,13 @@ class FactorImproveEnv(gym.Env):
                     "max_dd": float(is_results["max_dd"]),
                     "avg_turnover": float(is_results["avg_turnover"]),
                     "plot_path": is_results.get("plot_path")
+                },
+                "equal_weight_baseline": {
+                    "sharpe_gross": float(equal_weight_sharpe),
+                    "sharpe_net": float(equal_weight_sharpe),
+                    "sortino_net": float(is_results["equal_weight_baseline"]["sortino_net"]),
+                    "max_dd": float(is_results["equal_weight_baseline"]["max_dd"]),
+                    "avg_turnover": float(is_results["equal_weight_baseline"]["avg_turnover"])
                 },
                 "improvement": float(improvement),
                 "incremental_reward": float(incremental_reward),
@@ -281,6 +371,13 @@ class FactorImproveEnv(gym.Env):
                     "sortino_net": float(oos_results["sortino_net"]),
                     "max_dd": float(oos_results["max_dd"]),
                     "avg_turnover": float(oos_results["avg_turnover"])
+                },
+                "oos_equal_weight_baseline": {
+                    "sharpe_gross": float(oos_results["equal_weight_baseline"]["sharpe_gross"]),
+                    "sharpe_net": float(oos_results["equal_weight_baseline"]["sharpe_net"]),
+                    "sortino_net": float(oos_results["equal_weight_baseline"]["sortino_net"]),
+                    "max_dd": float(oos_results["equal_weight_baseline"]["max_dd"]),
+                    "avg_turnover": float(oos_results["equal_weight_baseline"]["avg_turnover"])
                 }
             }
 

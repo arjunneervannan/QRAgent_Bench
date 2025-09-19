@@ -28,6 +28,7 @@ def cross_sectional_ls(
     """
     returns = returns.dropna(how="all").copy()
     scores = scores.reindex_like(returns).copy()
+    returns, scores = returns.dropna().copy(), scores.dropna().copy()
 
     # Rebalance schedule
     rebal_idx = _rebalance_dates(returns.index, rebalance)
