@@ -16,21 +16,8 @@ def load_ff25_daily(path: str | Path = "data/ff25_daily.csv") -> pd.DataFrame:
         raise FileNotFoundError(f"Data file not found: {path}{FF_HELP}")
     # Read generously with low_memory=False to avoid mixed type warnings
     df = pd.read_csv(path, low_memory=False)
-    # Identify date column
-    date_col = None
-    for cand in ["date", "Date", "DATE"]:
-        if cand in df.columns:
-            date_col = cand
-            break
-    if date_col is None:
-        # assume first column is date
-        date_col = df.columns[0]
-    df.rename(columns={date_col: "date"}, inplace=True)
-
-    # keep only numeric-like rows for date
-    df = df[df["date"].astype(str).str.fullmatch(r"\d{6,8}") == True].copy()
     # Parse YYYYMMDD or YYYYMM
-    fmt = "%Y%m%d" if df["date"].astype(str).str.len().max() >= 8 else "%Y%m"
+    fmt = "%Y%m%d"
     df["date"] = pd.to_datetime(df["date"].astype(str), format=fmt, errors="coerce")
     df = df.dropna(subset=["date"]).set_index("date")
 
@@ -43,10 +30,7 @@ def load_ff25_daily(path: str | Path = "data/ff25_daily.csv") -> pd.DataFrame:
     if df.shape[1] < 10:
         raise ValueError(f"Parsed only {df.shape[1]} numeric columns; expected 25.{FF_HELP}")
 
-    # Auto-detect percent vs decimal
-    med = df.stack().abs().median()
-    if med > 0.5:  # likely percent scale
-        df = df / 100.0
+    df /= 100.0
 
     # Standardize column names
     df.columns = [str(c).strip().replace(" ", "_") for c in df.columns]

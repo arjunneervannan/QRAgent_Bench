@@ -59,25 +59,28 @@ def evaluate_program(program: dict, returns: pd.DataFrame) -> pd.DataFrame:
             src = get(n.get("src")) if "src" in n else returns
             out = ema(src, int(n["n"]))
         elif op == "sub":
-            out = get(n["a"]) - get(n["b"])
+            a, b = get(n["a"]), get(n["b"])
+            out = a.sub(b).dropna()
         elif op == "add":
-            out = get(n["a"]) + get(n["b"])
+            a, b = get(n["a"]), get(n["b"])
+            out = a.add(b).dropna()
         elif op == "mul":
-            out = get(n["a"]) * get(n["b"])
+            a, b = get(n["a"]), get(n["b"])
+            out = a.mul(b).dropna()
         elif op == "winsor_quantile":
-            out = winsor_quantile(get(n["src"]), float(n.get("q", 0.02)))
+            out = winsor_quantile(get(n["src"]), float(n.get("q")))
         elif op == "clip":
-            out = get(n["src"]).clip(float(n["lo"]), float(n["hi"]))
+            out = get(n["src"]).clip(float(n["lo"]), float(n["hi"])).dropna()
         elif op == "zscore_xs":
             out = zscore_xs(get(n["src"]))
         elif op == "demean_xs":
             out = demean_xs(get(n["src"]))
         elif op == "delay":
-            out = get(n["src"]).shift(int(n["d"]))
+            out = get(n["src"]).shift(int(n["d"])).dropna()
         elif op == "combine":
             parts = [get(i) for i in n["inputs"]]
             w = n.get("weights", [1.0 / len(parts)] * len(parts))
-            out = sum(p * w_i for p, w_i in zip(parts, w))
+            out = sum(p * w_i for p, w_i in zip(parts, w)).dropna()
         else:
             raise ValueError(f"Unknown op: {op}")
         
