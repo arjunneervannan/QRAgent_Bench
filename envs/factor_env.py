@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import pandas as pd
 import numpy as np
 from pathlib import Path
 import gymnasium as gym
@@ -114,7 +115,6 @@ class FactorImproveEnv(gym.Env):
         Returns:
             dict: Performance metrics similar to cross_sectional_ls output
         """
-        import pandas as pd
         
         n_portfolios = returns_data.shape[1]
         initial_weight = 1.0 / n_portfolios

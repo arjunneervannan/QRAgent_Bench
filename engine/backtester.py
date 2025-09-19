@@ -48,8 +48,16 @@ def cross_sectional_ls(
         ranks = s.rank(pct=True)
         long_mask  = (ranks >= 1.0 - top_q)
         short_mask = (ranks <= top_q)
+        
+        # Check if we have valid positions
         if long_mask.sum() == 0 or short_mask.sum() == 0:
-            w = prev_w * 0.0  # no positions if not enough names
+            # If no valid positions due to identical scores, use equal weight
+            if s.std() == 0 or s.nunique() == 1:
+                # All scores are identical - use equal weight strategy
+                w = pd.Series(1.0 / len(s), index=s.index)
+            else:
+                # No positions if not enough names for other reasons
+                w = prev_w * 0.0
         else:
             w_long  = long_mask.astype(float)
             w_short = short_mask.astype(float)
