@@ -14,7 +14,7 @@ class FactorImproveEnv(gym.Env):
     """Enhanced environment for factor improvement with OBSERVE and FACTOR_IMPROVE actions."""
     metadata = {"render_modes": []}
 
-    def __init__(self, data_path: str = "data/ff25_daily.csv", is_frac: float = 0.8, timesteps = 20):
+    def __init__(self, data_path: str = "data/ff25_value_weighted.csv", test_train_split, timesteps):
         super().__init__()
         
         # Get the project root directory (where this file is located)
@@ -23,7 +23,7 @@ class FactorImproveEnv(gym.Env):
         # Use absolute paths
         self.data_path = str(project_root / data_path)
         self.returns = load_ff25_daily(self.data_path)
-        self.split = int(is_frac * len(self.returns))
+        self.split = int(test_train_split * len(self.returns))
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
         self.timesteps = timesteps
         self.budget = timesteps

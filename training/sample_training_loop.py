@@ -217,7 +217,11 @@ def main():
     
     # Initialize environment
     try:
-        env = FactorImproveEnv()
+        env = FactorImproveEnv(
+            data_path="data/ff25_value_weighted.csv",
+            test_train_split=0.8,
+            timesteps=20
+        )
         print("✓ Environment initialized successfully")
     except FileNotFoundError as e:
         print(f"✗ Error: {e}")
