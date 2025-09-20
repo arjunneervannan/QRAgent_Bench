@@ -31,6 +31,8 @@ def load_ff25_daily(path: str | Path = "data/ff25_daily.csv") -> pd.DataFrame:
 
     df /= 100.0
 
+    df += 1.0
+
     # Standardize column names
     df.columns = [str(c).strip().replace(" ", "_") for c in df.columns]
     return df.sort_index()
