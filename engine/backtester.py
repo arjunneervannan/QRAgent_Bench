@@ -99,7 +99,7 @@ def cross_sectional_ls(
     }
     return out
 
-def plot_backtest_results(backtest_results: dict, title: str = "Backtest Results") -> str:
+def plot_backtest_results(backtest_results: dict, title: str = "Backtest Results", plot_path: str = None) -> str:
     """Generate comprehensive plots of backtest results and save as image."""
     fig, axes = plt.subplots(2, 3, figsize=(24, 16))
     fig.suptitle(title, fontsize=16)
@@ -228,7 +228,8 @@ def plot_backtest_results(backtest_results: dict, title: str = "Backtest Results
     plt.tight_layout()
     
     # Save plot
-    plot_path = f"backtest_results_{title.replace(' ', '_').lower()}.png"
+    if plot_path is None:
+        plot_path = f"backtest_results_{title.replace(' ', '_').lower()}.png"
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     
@@ -267,7 +268,8 @@ def run_in_sample_backtest(
     tc_bps: float = 10.0,
     turnover_cap: float = 1.5,
     delay_days: int = 1,
-    generate_plot: bool = False
+    generate_plot: bool = False,
+    plot_path: str = None
 ) -> dict:
     """
     Run an in-sample backtest with optional plot generation.
@@ -290,7 +292,16 @@ def run_in_sample_backtest(
     
     # Add plot path if requested
     if generate_plot:
-        plot_path = plot_backtest_results(backtest_results, "In-Sample Backtest Results")
+        # Create title with time period information
+        start_date = returns.index.min().strftime('%Y-%m-%d')
+        end_date = returns.index.max().strftime('%Y-%m-%d')
+        title = f"In-Sample Backtest Results ({start_date} to {end_date})"
+        
+        # Use custom path if provided, otherwise generate default
+        if plot_path is None:
+            plot_path = f"backtest_results_{start_date}_{end_date}.png"
+        
+        plot_path = plot_backtest_results(backtest_results, title, plot_path)
         backtest_results["plot_path"] = plot_path
     
     return backtest_results

@@ -23,7 +23,7 @@ This environment allows RL agents to:
 from envs.factor_env import FactorImproveEnv
 
 # Initialize environment
-env = FactorImproveEnv("data/ff25_daily.csv", test_train_split=0.8, timesteps=100)
+env = FactorImproveEnv("data/ff25_daily.csv", test_train_split=0.8, timesteps=100, plot_path="results/plots")
 
 # Reset and start episode
 obs, info = env.reset()

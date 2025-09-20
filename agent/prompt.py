@@ -62,7 +62,7 @@ CURRENT STATE:
 - Budget remaining: {last_obs.get('budget_left', 0)}
 - Current program: {json.dumps(last_obs.get('current_program', {}), indent=2)}
 - Last evaluation: {json.dumps(last_obs.get('last_eval', {}), indent=2)}
-- Baseline performance: {json.dumps(last_obs.get('baseline_performance', {}), indent=2)}
+- Equal weight baseline: {json.dumps(last_obs.get('equal_weight_baseline', {}), indent=2)}
 - Current performance: {json.dumps(last_obs.get('current_performance', {}), indent=2)}
 
 Think about what would be most helpful given the current state. Consider:

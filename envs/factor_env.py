@@ -15,7 +15,7 @@ class FactorImproveEnv(gym.Env):
     """Enhanced environment for factor improvement with OBSERVE and FACTOR_IMPROVE actions."""
     metadata = {"render_modes": []}
 
-    def __init__(self, data_path, test_train_split, timesteps, reward_config_path=None):
+    def __init__(self, data_path, test_train_split, timesteps, reward_config_path=None, plot_path=None):
         super().__init__()
         
         # Get the project root directory (where this file is located)
@@ -34,6 +34,12 @@ class FactorImproveEnv(gym.Env):
         
         # Load reward configuration
         self.reward_config = load_reward_config(reward_config_path)
+        
+        # Set plot path (default to current directory if not provided)
+        self.plot_path = plot_path or "plots"
+        
+        # Create plot directory if it doesn't exist
+        Path(self.plot_path).mkdir(parents=True, exist_ok=True)
 
         self.timesteps = timesteps
         self.budget = timesteps
@@ -46,10 +52,8 @@ class FactorImproveEnv(gym.Env):
             "leak": False
         }
         
-        # Load baseline factor using absolute path
-        baseline_path = project_root / "factors" / "baseline_program.json"
-        self.baseline_program = json.loads(baseline_path.read_text())
-        self.current_program = self.baseline_program.copy()
+        # Initialize current program (will be set by first FACTOR_IMPROVE action)
+        self.current_program = None
         
         # Reward tracking
         self.episode_rewards = []
@@ -94,7 +98,7 @@ class FactorImproveEnv(gym.Env):
         self.steps_used = 0
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
         self.last_eval = {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False}
-        self.current_program = self.baseline_program.copy()
+        self.current_program = None
         
         # Reset reward tracking
         self.episode_rewards = []
@@ -133,7 +137,7 @@ class FactorImproveEnv(gym.Env):
         
         return True
 
-    def _run_in_sample_backtest(self, program, generate_plot=False):
+    def _run_in_sample_backtest(self, program, generate_plot=False, plot_path=None):
         """Run in-sample backtest on the given program with random 10-year sampling."""
         scores = evaluate_program(program, self.returns)
         ret_is = self.returns.iloc[:self.split]
@@ -149,6 +153,7 @@ class FactorImproveEnv(gym.Env):
         factor_results = run_in_sample_backtest(
             ret_is, sc_is, 
             generate_plot=generate_plot,
+            plot_path=plot_path,
             **self.params
         )
         
@@ -237,8 +242,9 @@ class FactorImproveEnv(gym.Env):
                 # Validate and set the new program
                 self._validate_and_set_program(new_program)
                 
-                # Run in-sample backtest
-                is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
+                # Run in-sample backtest with custom plot path
+                plot_path = f"{self.plot_path}/factor_improve_backtest_{self.steps_used}.png"
+                is_results = self._run_in_sample_backtest(new_program, generate_plot=True, plot_path=plot_path)
                 
                 # Update current performance
                 self.current_performance = is_results

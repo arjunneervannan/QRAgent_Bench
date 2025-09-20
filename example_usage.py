@@ -26,7 +26,7 @@ def demonstrate_prompt_system():
             "output": "score"
         },
         "last_eval": {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False},
-        "baseline_performance": None,
+        "equal_weight_baseline": None,
         "current_performance": None,
         "episode_rewards": [],
         "incremental_rewards": []
@@ -57,7 +57,7 @@ def demonstrate_full_episode():
     """Demonstrate a complete episode with the new system."""
     print("=== Full Episode Demonstration ===\n")
     
-    env = FactorImproveEnv()
+    env = FactorImproveEnv("data/ff25_daily.csv", test_train_split=0.8, timesteps=100, plot_path="example_plots")
     builder = PromptBuilder()
     
     # Reset environment
