@@ -96,26 +96,36 @@ def cross_sectional_ls(
         "max_dd": max_drawdown((1.0 + strat_net).cumprod()),
         "avg_turnover": float(daily_turn.resample(rebalance).sum().mean() if len(daily_turn) else 0.0),
         "leakage_flag": bool(delay_days < 1),
-        "pure_sharpe_net": pure_sharpe(strat_net, "daily"),
-        "pure_sharpe_gross": pure_sharpe(strat_gross, "daily"),
     }
     return out
 
-def plot_agent_metrics(backtest_results: dict, title: str = "Agent Metrics", plot_path: str = None) -> str:
-    """Generate 2x2 grid plots specifically for agent evaluation."""
+def plot_strategy_results(strategy_weights: pd.DataFrame, 
+                         strategy_net_returns: pd.Series, 
+                         strategy_gross_returns: pd.Series,
+                         equal_weight_weights: pd.DataFrame,
+                         returns: pd.DataFrame,
+                         title: str = "Strategy Results", 
+                         plot_path: str = None) -> str:
+    """Generate comprehensive 2x2 grid plots for strategy evaluation."""
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     fig.suptitle(title, fontsize=16)
     
-    # Get data
-    strategy_net = backtest_results["series_net"]
-    strategy_gross = backtest_results["series_gross"]
-    equal_weight_net = backtest_results["equal_weight_baseline"]["series_net"]
+    # Calculate equal weight returns
+    equal_weight_returns = (equal_weight_weights * returns).sum(axis=1)
+    
+    # Calculate pure Sharpe ratios
+    strategy_pure_sharpe_net = pure_sharpe(strategy_net_returns, "daily")
+    strategy_pure_sharpe_gross = pure_sharpe(strategy_gross_returns, "daily")
+    equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
+    
+    # Calculate information ratio
+    info_ratio = information_ratio(strategy_net_returns, equal_weight_returns, "daily")
     
     # 1. Net performance, gross performance, and equal weight baseline
     ax1 = axes[0, 0]
-    cumulative_net = (1 + strategy_net).cumprod()
-    cumulative_gross = (1 + strategy_gross).cumprod()
-    cumulative_equal_weight = (1 + equal_weight_net).cumprod()
+    cumulative_net = (1 + strategy_net_returns).cumprod()
+    cumulative_gross = (1 + strategy_gross_returns).cumprod()
+    cumulative_equal_weight = (1 + equal_weight_returns).cumprod()
     
     cumulative_net.plot(ax=ax1, label="Strategy Net", alpha=0.8, linewidth=2)
     cumulative_gross.plot(ax=ax1, label="Strategy Gross", alpha=0.8, linewidth=2)
@@ -128,17 +138,16 @@ def plot_agent_metrics(backtest_results: dict, title: str = "Agent Metrics", plo
     
     # 2. 252-day rolling information ratio
     ax2 = axes[0, 1]
-    # Calculate rolling information ratio
     rolling_window = 252
-    if len(strategy_net) >= rolling_window:
+    if len(strategy_net_returns) >= rolling_window:
         rolling_ir = []
-        for i in range(rolling_window, len(strategy_net)):
-            strategy_window = strategy_net.iloc[i-rolling_window:i]
-            equal_weight_window = equal_weight_net.iloc[i-rolling_window:i]
+        for i in range(rolling_window, len(strategy_net_returns)):
+            strategy_window = strategy_net_returns.iloc[i-rolling_window:i]
+            equal_weight_window = equal_weight_returns.iloc[i-rolling_window:i]
             ir = information_ratio(strategy_window, equal_weight_window, "daily")
             rolling_ir.append(ir)
         
-        rolling_ir_series = pd.Series(rolling_ir, index=strategy_net.index[rolling_window:])
+        rolling_ir_series = pd.Series(rolling_ir, index=strategy_net_returns.index[rolling_window:])
         rolling_ir_series.plot(ax=ax2, color='green', alpha=0.8, linewidth=2)
         ax2.axhline(y=0, color='red', linestyle='--', alpha=0.5)
     
@@ -148,9 +157,9 @@ def plot_agent_metrics(backtest_results: dict, title: str = "Agent Metrics", plo
     
     # 3. 252-day rolling Sharpe for strategy and equal weight baseline
     ax3 = axes[1, 0]
-    if len(strategy_net) >= rolling_window:
-        strategy_rolling_sharpe = strategy_net.rolling(rolling_window).mean() / strategy_net.rolling(rolling_window).std() * np.sqrt(252)
-        equal_weight_rolling_sharpe = equal_weight_net.rolling(rolling_window).mean() / equal_weight_net.rolling(rolling_window).std() * np.sqrt(252)
+    if len(strategy_net_returns) >= rolling_window:
+        strategy_rolling_sharpe = strategy_net_returns.rolling(rolling_window).mean() / strategy_net_returns.rolling(rolling_window).std() * np.sqrt(252)
+        equal_weight_rolling_sharpe = equal_weight_returns.rolling(rolling_window).mean() / equal_weight_returns.rolling(rolling_window).std() * np.sqrt(252)
         
         strategy_rolling_sharpe.plot(ax=ax3, color='blue', alpha=0.8, linewidth=2, label="Strategy")
         equal_weight_rolling_sharpe.plot(ax=ax3, color='orange', alpha=0.8, linewidth=2, linestyle='--', label="Equal Weight")
@@ -163,14 +172,14 @@ def plot_agent_metrics(backtest_results: dict, title: str = "Agent Metrics", plo
     # 4. Drawdown graph
     ax4 = axes[1, 1]
     # Strategy drawdown
-    strategy_cumulative = (1 + strategy_net).cumprod()
+    strategy_cumulative = (1 + strategy_net_returns).cumprod()
     strategy_peaks = strategy_cumulative.cummax()
     strategy_drawdown = (strategy_cumulative / strategy_peaks) - 1
     strategy_drawdown.plot(ax=ax4, color='red', alpha=0.8, linewidth=2, label="Strategy")
     ax4.fill_between(strategy_drawdown.index, strategy_drawdown, 0, alpha=0.3, color='red')
     
     # Equal weight drawdown
-    equal_weight_cumulative = (1 + equal_weight_net).cumprod()
+    equal_weight_cumulative = (1 + equal_weight_returns).cumprod()
     equal_weight_peaks = equal_weight_cumulative.cummax()
     equal_weight_drawdown = (equal_weight_cumulative / equal_weight_peaks) - 1
     equal_weight_drawdown.plot(ax=ax4, color='orange', alpha=0.8, linewidth=2, linestyle='--', label="Equal Weight")
@@ -181,154 +190,27 @@ def plot_agent_metrics(backtest_results: dict, title: str = "Agent Metrics", plo
     ax4.legend()
     ax4.grid(True, alpha=0.3)
     
-    plt.tight_layout()
-    
-    # Save plot
-    if plot_path is None:
-        plot_path = f"agent_metrics_{title.replace(' ', '_').lower()}.png"
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    return plot_path
-
-def plot_backtest_results(backtest_results: dict, title: str = "Backtest Results", plot_path: str = None) -> str:
-    """Generate comprehensive plots of backtest results and save as image."""
-    fig, axes = plt.subplots(2, 3, figsize=(24, 16))
-    fig.suptitle(title, fontsize=16)
-    
-    # 1. Cumulative returns
-    ax1 = axes[0, 0]
-    cumulative_gross = (1 + backtest_results["series_gross"]).cumprod()
-    cumulative_net = (1 + backtest_results["series_net"]).cumprod()
-    cumulative_gross.plot(ax=ax1, label="Strategy Gross", alpha=0.8)
-    cumulative_net.plot(ax=ax1, label="Strategy Net", alpha=0.8)
-    
-    # Add equal weight baseline if available
-    if "equal_weight_baseline" in backtest_results:
-        equal_weight_returns = backtest_results["equal_weight_baseline"]["series_net"]
-        cumulative_equal_weight = (1 + equal_weight_returns).cumprod()
-        cumulative_equal_weight.plot(ax=ax1, label="Equal Weight", alpha=0.8, linestyle='--')
-    
-    ax1.set_title("Cumulative Returns")
-    ax1.set_ylabel("Cumulative Return")
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    
-    # 2. Rolling Sharpe ratio
-    ax2 = axes[0, 1]
-    rolling_sharpe = backtest_results["series_net"].rolling(252).mean() / backtest_results["series_net"].rolling(252).std() * np.sqrt(252)
-    rolling_sharpe.plot(ax=ax2, color='green', alpha=0.8, label="Strategy")
-    
-    # Add equal weight baseline rolling Sharpe if available
-    if "equal_weight_baseline" in backtest_results:
-        eq_returns = backtest_results["equal_weight_baseline"]["series_net"]
-        eq_rolling_sharpe = eq_returns.rolling(252).mean() / eq_returns.rolling(252).std() * np.sqrt(252)
-        eq_rolling_sharpe.plot(ax=ax2, color='orange', alpha=0.8, linestyle='--', label="Equal Weight")
-    
-    ax2.set_title("Rolling Sharpe Ratio (252-day)")
-    ax2.set_ylabel("Sharpe Ratio")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    
-    # 3. Drawdown
-    ax3 = axes[0, 2]
-    cumulative = (1 + backtest_results["series_net"]).cumprod()
-    peaks = cumulative.cummax()
-    drawdown = (cumulative / peaks) - 1
-    drawdown.plot(ax=ax3, color='red', alpha=0.8, label="Strategy")
-    ax3.fill_between(drawdown.index, drawdown, 0, alpha=0.3, color='red')
-    
-    # Add equal weight baseline drawdown if available
-    if "equal_weight_baseline" in backtest_results:
-        eq_returns = backtest_results["equal_weight_baseline"]["series_net"]
-        eq_cumulative = (1 + eq_returns).cumprod()
-        eq_peaks = eq_cumulative.cummax()
-        eq_drawdown = (eq_cumulative / eq_peaks) - 1
-        eq_drawdown.plot(ax=ax3, color='orange', alpha=0.8, linestyle='--', label="Equal Weight")
-        ax3.fill_between(eq_drawdown.index, eq_drawdown, 0, alpha=0.2, color='orange')
-    
-    ax3.set_title("Drawdown")
-    ax3.set_ylabel("Drawdown")
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-    
-    # 4. Return distribution
-    ax4 = axes[1, 0]
-    backtest_results["series_net"].hist(bins=50, ax=ax4, alpha=0.7, color='blue', label="Strategy")
-    ax4.axvline(backtest_results["series_net"].mean(), color='red', linestyle='--', label=f'Strategy Mean: {backtest_results["series_net"].mean():.4f}')
-    
-    # Add equal weight baseline distribution if available
-    if "equal_weight_baseline" in backtest_results:
-        eq_returns = backtest_results["equal_weight_baseline"]["series_net"]
-        eq_returns.hist(bins=50, ax=ax4, alpha=0.5, color='orange', label="Equal Weight")
-        ax4.axvline(eq_returns.mean(), color='orange', linestyle=':', label=f'Equal Weight Mean: {eq_returns.mean():.4f}')
-    
-    ax4.set_title("Return Distribution")
-    ax4.set_xlabel("Daily Return")
-    ax4.set_ylabel("Frequency")
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    # 5. Turnover over time
-    ax5 = axes[1, 1]
-    daily_turnover = backtest_results["weights"].diff().abs().sum(axis=1)
-    daily_turnover.plot(ax=ax5, alpha=0.7, color='orange', label="Strategy")
-    
-    # Add equal weight baseline turnover if available
-    if "equal_weight_baseline" in backtest_results:
-        eq_weights = backtest_results["equal_weight_baseline"]["weights"]
-        eq_turnover = eq_weights.diff().abs().sum(axis=1)
-        eq_turnover.plot(ax=ax5, alpha=0.7, color='green', linestyle='--', label="Equal Weight")
-    
-    ax5.set_title("Daily Turnover")
-    ax5.set_ylabel("Turnover")
-    ax5.legend()
-    ax5.grid(True, alpha=0.3)
-    
-    # 6. Performance metrics table
-    ax6 = axes[1, 2]
-    ax6.axis('off')
-    
-    # Build metrics text
-    metrics_text = f"""
-    Performance Metrics:
-    
-    Strategy:
-    Gross Sharpe: {backtest_results['sharpe_gross']:.3f}
-    Net Sharpe: {backtest_results['sharpe_net']:.3f}
-    Sortino: {backtest_results['sortino_net']:.3f}
-    Max Drawdown: {backtest_results['max_dd']:.3f}
-    Avg Turnover: {backtest_results['avg_turnover']:.3f}
-    Leakage Flag: {backtest_results['leakage_flag']}
-    """
-    
-    # Add equal weight baseline metrics if available
-    if "equal_weight_baseline" in backtest_results:
-        eq = backtest_results["equal_weight_baseline"]
-        metrics_text += f"""
-    
-    Equal Weight Baseline:
-    Sharpe: {eq['sharpe_net']:.3f}
-    Sortino: {eq['sortino_net']:.3f}
-    Max Drawdown: {eq['max_dd']:.3f}
-    Avg Turnover: {eq['avg_turnover']:.3f}
-    """
-    
-    ax6.text(0.1, 0.5, metrics_text, transform=ax6.transAxes, fontsize=12, 
-             verticalalignment='center', fontfamily='monospace')
+    # Add metrics summary as text overlay
+    fig.text(0.02, 0.02, 
+             f"Strategy Pure Sharpe (Net): {strategy_pure_sharpe_net:.3f}\n"
+             f"Strategy Pure Sharpe (Gross): {strategy_pure_sharpe_gross:.3f}\n"
+             f"Equal Weight Pure Sharpe: {equal_weight_pure_sharpe:.3f}\n"
+             f"Information Ratio: {info_ratio:.3f}",
+             fontsize=10, verticalalignment='bottom', 
+             bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8))
     
     plt.tight_layout()
     
     # Save plot
     if plot_path is None:
-        plot_path = f"backtest_results_{title.replace(' ', '_').lower()}.png"
+        plot_path = f"strategy_results_{title.replace(' ', '_').lower()}.png"
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.close()
     
     return plot_path
 
-def equal_weight_baseline(returns: pd.DataFrame) -> dict:
-    """Calculate equal-weight baseline with drift for the same time period as backtest."""
+def equal_weight_baseline(returns: pd.DataFrame) -> pd.DataFrame:
+    """Calculate equal-weight baseline weights with drift for the same time period as backtest."""
     n_portfolios = returns.shape[1]
     weights = pd.DataFrame(1.0 / n_portfolios, index=returns.index, columns=returns.columns)
     
@@ -338,21 +220,7 @@ def equal_weight_baseline(returns: pd.DataFrame) -> dict:
         new_weights = prev_weights * (1 + returns.iloc[i-1])
         weights.iloc[i] = new_weights / new_weights.sum()
     
-    strategy_returns = (weights * returns).sum(axis=1)
-    
-    return {
-        "weights": weights,
-        "series_gross": strategy_returns,
-        "series_net": strategy_returns,
-        "sharpe_gross": sharpe(strategy_returns, "daily"),
-        "sharpe_net": sharpe(strategy_returns, "daily"),
-        "sortino_net": sortino(strategy_returns, "daily"),
-        "max_dd": max_drawdown((1.0 + strategy_returns).cumprod()),
-        "avg_turnover": float(weights.diff().abs().sum(axis=1).mean()),
-        "leakage_flag": False,
-        "pure_sharpe_net": pure_sharpe(strategy_returns, "daily"),
-        "pure_sharpe_gross": pure_sharpe(strategy_returns, "daily"),
-    }
+    return weights
 
 def run_in_sample_backtest(
     returns: pd.DataFrame,
@@ -380,29 +248,38 @@ def run_in_sample_backtest(
         delay_days=delay_days
     )
     
-    # Calculate equal weight baseline for comparison
-    equal_weight_results = equal_weight_baseline(returns)
-    backtest_results["equal_weight_baseline"] = equal_weight_results
+    # Calculate equal weight baseline weights
+    equal_weight_weights = equal_weight_baseline(returns)
+    backtest_results["equal_weight_weights"] = equal_weight_weights
+    
+    # Calculate equal weight returns for information ratio
+    equal_weight_returns = (equal_weight_weights * returns).sum(axis=1)
     
     # Calculate information ratio
     strategy_net = backtest_results["series_net"]
-    equal_weight_net = equal_weight_results["series_net"]
-    info_ratio = information_ratio(strategy_net, equal_weight_net, "daily")
+    info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
     backtest_results["information_ratio"] = info_ratio
-    equal_weight_results["information_ratio"] = 0.0  # Equal weight vs itself is 0
     
     # Add plot path if requested
     if generate_plot:
         # Create title with time period information
         start_date = returns.index.min().strftime('%Y-%m-%d')
         end_date = returns.index.max().strftime('%Y-%m-%d')
-        title = f"Agent Metrics ({start_date} to {end_date})"
+        title = f"Strategy Results ({start_date} to {end_date})"
         
         # Use custom path if provided, otherwise generate default
         if plot_path is None:
-            plot_path = f"agent_metrics_{start_date}_{end_date}.png"
+            plot_path = f"strategy_results_{start_date}_{end_date}.png"
         
-        plot_path = plot_agent_metrics(backtest_results, title, plot_path)
+        plot_path = plot_strategy_results(
+            strategy_weights=backtest_results["weights"],
+            strategy_net_returns=backtest_results["series_net"],
+            strategy_gross_returns=backtest_results["series_gross"],
+            equal_weight_weights=equal_weight_weights,
+            returns=returns,
+            title=title,
+            plot_path=plot_path
+        )
         backtest_results["plot_path"] = plot_path
     
     return backtest_results

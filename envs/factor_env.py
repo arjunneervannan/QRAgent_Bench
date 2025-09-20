@@ -6,7 +6,7 @@ from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
 from engine.backtester import cross_sectional_ls, run_in_sample_backtest, equal_weight_baseline
-from engine.metrics import information_ratio
+from engine.metrics import information_ratio, sharpe, sortino, max_drawdown, pure_sharpe
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
@@ -199,14 +199,22 @@ class FactorImproveEnv(gym.Env):
         ret_oos = self.returns.iloc[self.split:]
         sc_oos = scores.iloc[self.split:]
         
-        # Calculate equal-weight baseline for out-of-sample period
-        equal_weight_results = equal_weight_baseline(ret_oos)
+        # Calculate equal-weight baseline weights for out-of-sample period
+        equal_weight_weights = equal_weight_baseline(ret_oos)
         
         # Run factor-based backtest
         factor_results = cross_sectional_ls(ret_oos, sc_oos, **self.params)
         
-        # Add equal-weight baseline to results
-        factor_results["equal_weight_baseline"] = equal_weight_results
+        # Add equal-weight weights to results
+        factor_results["equal_weight_weights"] = equal_weight_weights
+        
+        # Calculate equal weight returns for information ratio
+        equal_weight_returns = (equal_weight_weights * ret_oos).sum(axis=1)
+        
+        # Calculate information ratio
+        strategy_net = factor_results["series_net"]
+        info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
+        factor_results["information_ratio"] = info_ratio
         
         return factor_results
 
@@ -266,11 +274,19 @@ class FactorImproveEnv(gym.Env):
                 
                 # Set equal-weight baseline if not already set
                 if self.equal_weight_baseline is None:
-                    self.equal_weight_baseline = is_results["equal_weight_baseline"]
+                    self.equal_weight_baseline = is_results["equal_weight_weights"]
+                
+                # Calculate equal weight returns and metrics
+                equal_weight_weights = is_results["equal_weight_weights"]
+                equal_weight_returns = (equal_weight_weights * self.returns.iloc[:self.split]).sum(axis=1)
+                
+                # Calculate pure Sharpe ratios
+                strategy_pure_sharpe = pure_sharpe(is_results["series_net"], "daily")
+                equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
                 
                 # Calculate improvement vs equal weight baseline
                 current_sharpe = is_results["sharpe_net"]
-                equal_weight_sharpe = is_results["equal_weight_baseline"]["sharpe_net"]
+                equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
                 improvement = current_sharpe - equal_weight_sharpe
                 
                 # Update last improvement
@@ -286,8 +302,8 @@ class FactorImproveEnv(gym.Env):
                 self.last_eval = {
                     # Core performance metrics
                     "information_ratio": float(is_results["information_ratio"]),
-                    "strategy_pure_sharpe": float(is_results["pure_sharpe_net"]),
-                    "benchmark_pure_sharpe": float(is_results["equal_weight_baseline"]["pure_sharpe_net"]),
+                    "strategy_pure_sharpe": float(strategy_pure_sharpe),
+                    "benchmark_pure_sharpe": float(equal_weight_pure_sharpe),
                     "strategy_sortino": float(is_results["sortino_net"]),
                     "max_drawdown": float(is_results["max_dd"]),
                     
@@ -349,16 +365,19 @@ class FactorImproveEnv(gym.Env):
             leak = oos_results["leakage_flag"]
             tests_pass = not leak
 
-            # Calculate OOS information ratio
+            # Calculate OOS pure Sharpe ratios
             oos_strategy_net = oos_results["series_net"]
-            oos_equal_weight_net = oos_results["equal_weight_baseline"]["series_net"]
-            oos_info_ratio = information_ratio(oos_strategy_net, oos_equal_weight_net, "daily")
+            oos_equal_weight_weights = oos_results["equal_weight_weights"]
+            oos_equal_weight_returns = (oos_equal_weight_weights * self.returns.iloc[self.split:]).sum(axis=1)
+            
+            strategy_pure_sharpe = pure_sharpe(oos_strategy_net, "daily")
+            equal_weight_pure_sharpe = pure_sharpe(oos_equal_weight_returns, "daily")
             
             self.last_eval = {
                 # Core performance metrics
-                "information_ratio": float(oos_info_ratio),
-                "strategy_pure_sharpe": float(oos_results["pure_sharpe_net"]),
-                "benchmark_pure_sharpe": float(oos_results["equal_weight_baseline"]["pure_sharpe_net"]),
+                "information_ratio": float(oos_results["information_ratio"]),
+                "strategy_pure_sharpe": float(strategy_pure_sharpe),
+                "benchmark_pure_sharpe": float(equal_weight_pure_sharpe),
                 "strategy_sortino": float(oos_results["sortino_net"]),
                 "max_drawdown": float(oos_results["max_dd"]),
                 
