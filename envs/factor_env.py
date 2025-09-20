@@ -53,7 +53,6 @@ class FactorImproveEnv(gym.Env):
         # Reward tracking
         self.episode_rewards = []
         self.incremental_rewards = []
-        self.current_performance = None
         
         # Track last improvement from factor_improve actions
         self.last_improvement = 0.0
@@ -69,7 +68,6 @@ class FactorImproveEnv(gym.Env):
             "analyze_factor_performance": self._analyze_factor_performance
         }
 
-
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.budget = self.timesteps
@@ -79,8 +77,7 @@ class FactorImproveEnv(gym.Env):
         
         # Reset reward tracking
         self.episode_rewards = []
-        self.incremental_rewards = []
-        self.current_performance = None
+        self.incremental_rewards = []s
         self.last_improvement = 0.0
         self.previous_information_ratio = 0.0
         self.has_performance_data = False
@@ -302,11 +299,9 @@ class FactorImproveEnv(gym.Env):
                 plot_path = f"{self.plot_path}/factor_improve_backtest_{self.steps_used}.png"
                 is_results = self._run_in_sample_backtest(new_program, generate_plot=True, plot_path=plot_path)
                 
-                # Update current performance
-                self.current_performance = is_results
-                
                 # Calculate improvement: current info ratio minus previous
                 current_info_ratio = float(is_results["information_ratio"])
+
                 if not self.has_performance_data:
                     # First backtest - improvement is 0
                     self.last_improvement = 0.0
@@ -346,7 +341,6 @@ class FactorImproveEnv(gym.Env):
                     # Additional context
                     "improvement": float(self.last_improvement),
                     "plot_path": is_results.get("plot_path"),
-                    "program_updated": True
                 }
                 
                 reward = incremental_reward
