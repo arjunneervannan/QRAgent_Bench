@@ -6,6 +6,7 @@ from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
 from engine.backtester import cross_sectional_ls, run_in_sample_backtest, equal_weight_baseline
+from engine.metrics import information_ratio
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
@@ -46,8 +47,11 @@ class FactorImproveEnv(gym.Env):
         self.steps_used = 0
 
         self.last_eval = {
-            "oos_sharpe": 0.0,
-            "turnover": 0.0,
+            "information_ratio": 0.0,
+            "strategy_pure_sharpe": 0.0,
+            "benchmark_pure_sharpe": 0.0,
+            "strategy_sortino": 0.0,
+            "max_drawdown": 0.0,
             "tests_pass": True,
             "leak": False
         }
@@ -97,7 +101,15 @@ class FactorImproveEnv(gym.Env):
         self.budget = self.timesteps
         self.steps_used = 0
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
-        self.last_eval = {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False}
+        self.last_eval = {
+            "information_ratio": 0.0,
+            "strategy_pure_sharpe": 0.0,
+            "benchmark_pure_sharpe": 0.0,
+            "strategy_sortino": 0.0,
+            "max_drawdown": 0.0,
+            "tests_pass": True,
+            "leak": False
+        }
         self.current_program = None
         
         # Reset reward tracking
@@ -208,8 +220,11 @@ class FactorImproveEnv(gym.Env):
         if not is_valid_action:
             reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
             self.last_eval = {
-                "oos_sharpe": 0.0,
-                "turnover": 0.0,
+                "information_ratio": 0.0,
+                "strategy_pure_sharpe": 0.0,
+                "benchmark_pure_sharpe": 0.0,
+                "strategy_sortino": 0.0,
+                "max_drawdown": 0.0,
                 "tests_pass": False,
                 "leak": False,
                 "validation_errors": action_errors
@@ -267,29 +282,22 @@ class FactorImproveEnv(gym.Env):
                                                     equal_weight_sharpe=equal_weight_sharpe)
                 self.incremental_rewards.append(incremental_reward)
                 
-                # Update last_eval only for factor_improve actions
+                # Update last_eval with clean metrics for agent
                 self.last_eval = {
-                    "oos_sharpe": float(is_results["sharpe_net"]),
-                    "turnover": float(is_results["avg_turnover"]),
+                    # Core performance metrics
+                    "information_ratio": float(is_results["information_ratio"]),
+                    "strategy_pure_sharpe": float(is_results["pure_sharpe_net"]),
+                    "benchmark_pure_sharpe": float(is_results["equal_weight_baseline"]["pure_sharpe_net"]),
+                    "strategy_sortino": float(is_results["sortino_net"]),
+                    "max_drawdown": float(is_results["max_dd"]),
+                    
+                    # Validation flags
                     "tests_pass": not is_results["leakage_flag"],
                     "leak": bool(is_results["leakage_flag"]),
-                    "in_sample_results": {
-                        "sharpe_gross": float(is_results["sharpe_gross"]),
-                        "sharpe_net": float(is_results["sharpe_net"]),
-                        "sortino_net": float(is_results["sortino_net"]),
-                        "max_dd": float(is_results["max_dd"]),
-                        "avg_turnover": float(is_results["avg_turnover"]),
-                        "plot_path": is_results.get("plot_path")
-                    },
-                    "equal_weight_baseline": {
-                        "sharpe_gross": float(equal_weight_sharpe),
-                        "sharpe_net": float(equal_weight_sharpe),
-                        "sortino_net": float(is_results["equal_weight_baseline"]["sortino_net"]),
-                        "max_dd": float(is_results["equal_weight_baseline"]["max_dd"]),
-                        "avg_turnover": float(is_results["equal_weight_baseline"]["avg_turnover"])
-                    },
+                    
+                    # Additional context
                     "improvement": float(improvement),
-                    "incremental_reward": float(incremental_reward),
+                    "plot_path": is_results.get("plot_path"),
                     "program_updated": True
                 }
                 
@@ -301,8 +309,11 @@ class FactorImproveEnv(gym.Env):
                 reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
                 
                 self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
+                    "information_ratio": 0.0,
+                    "strategy_pure_sharpe": 0.0,
+                    "benchmark_pure_sharpe": 0.0,
+                    "strategy_sortino": 0.0,
+                    "max_drawdown": 0.0,
                     "tests_pass": False,
                     "leak": False,
                     "validation_errors": [error_msg],
@@ -315,8 +326,11 @@ class FactorImproveEnv(gym.Env):
                 reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
                 
                 self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
+                    "information_ratio": 0.0,
+                    "strategy_pure_sharpe": 0.0,
+                    "benchmark_pure_sharpe": 0.0,
+                    "strategy_sortino": 0.0,
+                    "max_drawdown": 0.0,
                     "tests_pass": False,
                     "leak": False,
                     "runtime_errors": [error_msg],
@@ -335,25 +349,25 @@ class FactorImproveEnv(gym.Env):
             leak = oos_results["leakage_flag"]
             tests_pass = not leak
 
+            # Calculate OOS information ratio
+            oos_strategy_net = oos_results["series_net"]
+            oos_equal_weight_net = oos_results["equal_weight_baseline"]["series_net"]
+            oos_info_ratio = information_ratio(oos_strategy_net, oos_equal_weight_net, "daily")
+            
             self.last_eval = {
-                "oos_sharpe": float(d_sharpe),
-                "turnover": float(turnover),
+                # Core performance metrics
+                "information_ratio": float(oos_info_ratio),
+                "strategy_pure_sharpe": float(oos_results["pure_sharpe_net"]),
+                "benchmark_pure_sharpe": float(oos_results["equal_weight_baseline"]["pure_sharpe_net"]),
+                "strategy_sortino": float(oos_results["sortino_net"]),
+                "max_drawdown": float(oos_results["max_dd"]),
+                
+                # Validation flags
                 "tests_pass": bool(tests_pass),
                 "leak": bool(leak),
-                "oos_results": {
-                    "sharpe_gross": float(oos_results["sharpe_gross"]),
-                    "sharpe_net": float(oos_results["sharpe_net"]),
-                    "sortino_net": float(oos_results["sortino_net"]),
-                    "max_dd": float(oos_results["max_dd"]),
-                    "avg_turnover": float(oos_results["avg_turnover"])
-                },
-                "oos_equal_weight_baseline": {
-                    "sharpe_gross": float(oos_results["equal_weight_baseline"]["sharpe_gross"]),
-                    "sharpe_net": float(oos_results["equal_weight_baseline"]["sharpe_net"]),
-                    "sortino_net": float(oos_results["equal_weight_baseline"]["sortino_net"]),
-                    "max_dd": float(oos_results["equal_weight_baseline"]["max_dd"]),
-                    "avg_turnover": float(oos_results["equal_weight_baseline"]["avg_turnover"])
-                }
+                
+                # Additional context
+                "final_evaluation": True
             }
 
             # Calculate final reward
