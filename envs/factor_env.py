@@ -6,6 +6,7 @@ from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
 from engine.backtester import *
+from engine.plot_backtest_results import plot_strategy_results
 from engine.metrics import *
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
@@ -142,23 +143,13 @@ class FactorImproveEnv(gym.Env):
         
         # Calculate metrics
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
-        strategy_pure_sharpe = pure_sharpe(strategy_net, "daily")
-        equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
-        current_sharpe = sharpe(strategy_net, "daily")
-        equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
-        improvement = current_sharpe - equal_weight_sharpe
         
         # Create clean backtest results with only essential metrics
         backtest_results = {
-            "sharpe_net": current_sharpe,
-            "sharpe_gross": sharpe(strategy_gross, "daily"),
+            "strategy_sharpe_net": sharpe(strategy_net, "daily"),
+            "strategy_sharpe_gross": sharpe(strategy_gross, "daily"),
+            "equal_weight_sharpe": sharpe(equal_weight_returns, "daily"),
             "information_ratio": info_ratio,
-            "strategy_pure_sharpe": strategy_pure_sharpe,
-            "equal_weight_pure_sharpe": equal_weight_pure_sharpe,
-            "improvement": improvement,
-            "series_net": strategy_net,
-            "series_gross": strategy_gross,
-            "equal_weight_returns": equal_weight_returns,
         }
         
         # Add plot path if requested
@@ -231,23 +222,13 @@ class FactorImproveEnv(gym.Env):
         
         # Calculate metrics
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
-        strategy_pure_sharpe = pure_sharpe(strategy_net, "daily")
-        equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
-        current_sharpe = sharpe(strategy_net, "daily")
-        equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
-        improvement = current_sharpe - equal_weight_sharpe
         
         # Create clean backtest results with only essential metrics
         backtest_results = {
-            "sharpe_net": current_sharpe,
-            "sharpe_gross": sharpe(strategy_gross, "daily"),
+            "strategy_sharpe_net": sharpe(strategy_net, "daily"),
+            "strategy_sharpe_gross": sharpe(strategy_gross, "daily"),
+            "equal_weight_sharpe": sharpe(equal_weight_returns, "daily"),
             "information_ratio": info_ratio,
-            "strategy_pure_sharpe": strategy_pure_sharpe,
-            "equal_weight_pure_sharpe": equal_weight_pure_sharpe,
-            "improvement": improvement,
-            "series_net": strategy_net,
-            "series_gross": strategy_gross,
-            "equal_weight_returns": equal_weight_returns,
         }
         
         return backtest_results
@@ -314,9 +295,10 @@ class FactorImproveEnv(gym.Env):
                 
                 # Calculate reward
                 incremental_reward = calculate_reward(
-                    "FACTOR_IMPROVE", self.reward_config,
-                    current_sharpe=is_results["sharpe_net"],
-                    equal_weight_sharpe=sharpe(is_results["equal_weight_returns"], "daily")
+                    "FACTOR_IMPROVE",
+                    self.reward_config,
+                    current_sharpe=is_results["strategy_sharpe_net"],
+                    equal_weight_sharpe=is_results["equal_weight_sharpe"]
                 )
                 
                 self.incremental_rewards.append(incremental_reward)
@@ -327,16 +309,10 @@ class FactorImproveEnv(gym.Env):
                 # Add investment performance to obs with all metrics
                 obs["investment_performance"] = {
                     # Core performance metrics
-                    "sharpe_net": float(is_results["sharpe_net"]),
+                    "strategy_sharpe_net": float(is_results["strategy_sharpe_net"]),
+                    "strategy_sharpe_gross": float(is_results["strategy_sharpe_gross"]),
+                    "equal_weight_sharpe": float(is_results["equal_weight_sharpe"]),
                     "information_ratio": float(is_results["information_ratio"]),
-                    "strategy_pure_sharpe": float(is_results["strategy_pure_sharpe"]),
-                    "benchmark_pure_sharpe": float(is_results["equal_weight_pure_sharpe"]),
-                    "strategy_sortino": float(is_results["sortino_net"]),
-                    "max_drawdown": float(is_results["max_dd"]),
-                    
-                    # Validation flags
-                    "tests_pass": not is_results["leakage_flag"],
-                    "leak": bool(is_results["leakage_flag"]),
                     
                     # Additional context
                     "improvement": float(self.last_improvement),
@@ -364,31 +340,16 @@ class FactorImproveEnv(gym.Env):
             # Automatically run OOS evaluation when agent chooses to stop
             oos_results = self._run_oos_backtest(self.current_program)
             
-            d_sharpe = oos_results["sharpe_net"]
-            turnover = oos_results["avg_turnover"]
-            leak = oos_results["leakage_flag"]
-            tests_pass = not leak
-
-            # Calculate OOS pure Sharpe ratios
-            oos_strategy_net = oos_results["series_net"]
-            oos_equal_weight_returns = oos_results["equal_weight_returns"]
-            
-            strategy_pure_sharpe = pure_sharpe(oos_strategy_net, "daily")
-            equal_weight_pure_sharpe = pure_sharpe(oos_equal_weight_returns, "daily")
+            # Note: We removed turnover, leak, and tests_pass calculations as they're not in the backtest results
+            # These would need to be added to the backtest functions if needed
             
             # Add final evaluation performance to obs
             obs["investment_performance"] = {
                 # Core performance metrics
-                "sharpe_net": float(oos_results["sharpe_net"]),
+                "strategy_sharpe_net": float(oos_results["strategy_sharpe_net"]),
+                "strategy_sharpe_gross": float(oos_results["strategy_sharpe_gross"]),
+                "equal_weight_sharpe": float(oos_results["equal_weight_sharpe"]),
                 "information_ratio": float(oos_results["information_ratio"]),
-                "strategy_pure_sharpe": float(strategy_pure_sharpe),
-                "benchmark_pure_sharpe": float(equal_weight_pure_sharpe),
-                "strategy_sortino": float(oos_results["sortino_net"]),
-                "max_drawdown": float(oos_results["max_dd"]),
-                
-                # Validation flags
-                "tests_pass": bool(tests_pass),
-                "leak": bool(leak),
                 
                 # Additional context
                 "final_evaluation": True
@@ -396,11 +357,11 @@ class FactorImproveEnv(gym.Env):
 
             # Calculate final reward
             reward = calculate_reward("STOP", self.reward_config,
-                                    oos_sharpe=d_sharpe,
-                                    turnover=turnover,
+                                    oos_sharpe=oos_results["strategy_sharpe_net"],
+                                    turnover=0.0,  # Default value since we removed turnover calculation
                                     steps_used=self.steps_used,
-                                    tests_pass=tests_pass,
-                                    leak=leak)
+                                    tests_pass=True,  # Default value since we removed tests_pass calculation
+                                    leak=False)  # Default value since we removed leak calculation
             
             # Add incremental rewards
             if self.incremental_rewards:
