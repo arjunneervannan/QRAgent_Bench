@@ -14,7 +14,7 @@ class FactorImproveEnv(gym.Env):
     """Enhanced environment for factor improvement with OBSERVE and FACTOR_IMPROVE actions."""
     metadata = {"render_modes": []}
 
-    def __init__(self, data_path: str = "data/ff25_value_weighted.csv", test_train_split, timesteps):
+    def __init__(self, data_path, test_train_split, timesteps):
         super().__init__()
         
         # Get the project root directory (where this file is located)
@@ -129,8 +129,9 @@ class FactorImproveEnv(gym.Env):
             # Previous weights
             prev_weights = weights.iloc[i-1]
             
-            # Calculate new weights: w_t * (1 + r_t)
-            new_weights = prev_weights * (1 + returns_data.iloc[i])
+            # Calculate new weights: w_t = w_{t-1} * (1 + r_{t-1}) / sum(w_{t-1} * (1 + r_{t-1}))
+            # Use previous day's returns to update current day's weights
+            new_weights = prev_weights * (1 + returns_data.iloc[i-1])
             
             # Normalize to sum to 1 (drift)
             weights.iloc[i] = new_weights / new_weights.sum()

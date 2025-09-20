@@ -16,9 +16,8 @@ def load_ff25_daily(path: str | Path = "data/ff25_daily.csv") -> pd.DataFrame:
         raise FileNotFoundError(f"Data file not found: {path}{FF_HELP}")
     # Read generously with low_memory=False to avoid mixed type warnings
     df = pd.read_csv(path, low_memory=False)
-    # Parse YYYYMMDD or YYYYMM
-    fmt = "%Y%m%d"
-    df["date"] = pd.to_datetime(df["date"].astype(str), format=fmt, errors="coerce")
+
+    df["date"] = pd.to_datetime(df["date"].astype(str), format="%Y%m%d", errors="coerce")
     df = df.dropna(subset=["date"]).set_index("date")
 
     # Ensure we have 25 columns of returns
