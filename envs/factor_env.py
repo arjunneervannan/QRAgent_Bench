@@ -5,8 +5,8 @@ import numpy as np
 from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
-from engine.backtester import cross_sectional_ls, equal_weight_baseline, plot_strategy_results
-from engine.metrics import information_ratio, sharpe, sortino, max_drawdown, pure_sharpe
+from engine.backtester import *
+from engine.metrics import *
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
@@ -166,16 +166,17 @@ class FactorImproveEnv(gym.Env):
             **self.params
         )
         
-        # Calculate equal weight baseline weights
-        baseline_weights = equal_weight_baseline(ret_is, rebalance=self.params.get("rebalance", "ME"))
-        backtest_results["baseline_weights"] = baseline_weights
+        # Calculate equal weight baseline
+        baseline_results = equal_weight_baseline(ret_is, rebalance=self.params.get("rebalance", "ME"))
+        backtest_results["baseline_weights"] = baseline_results["weights"]
+        backtest_results["equal_weight_returns"] = baseline_results["strategy_returns"]
         
-        # Calculate equal weight returns for information ratio
-        equal_weight_returns = (baseline_weights * ret_is).sum(axis=1)
-        backtest_results["equal_weight_returns"] = equal_weight_returns
+        # Extract strategy returns
+        strategy_net = backtest_results["strategy_net_returns"]
+        strategy_gross = backtest_results["strategy_gross_returns"]
+        equal_weight_returns = baseline_results["strategy_returns"]
         
         # Calculate information ratio
-        strategy_net = backtest_results["series_net"]
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
         backtest_results["information_ratio"] = info_ratio
         
@@ -186,10 +187,16 @@ class FactorImproveEnv(gym.Env):
         backtest_results["equal_weight_pure_sharpe"] = equal_weight_pure_sharpe
         
         # Calculate improvement vs equal weight baseline
-        current_sharpe = backtest_results["sharpe_net"]
+        current_sharpe = sharpe(strategy_net, "daily")
         equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
         improvement = current_sharpe - equal_weight_sharpe
         backtest_results["improvement"] = improvement
+        
+        # Add additional metrics for compatibility
+        backtest_results["sharpe_net"] = current_sharpe
+        backtest_results["sharpe_gross"] = sharpe(strategy_gross, "daily")
+        backtest_results["series_net"] = strategy_net
+        backtest_results["series_gross"] = strategy_gross
         
         # Add plot path if requested
         if generate_plot:

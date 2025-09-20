@@ -3,23 +3,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from .metrics import *
 
 def _rebalance_dates(index: pd.DatetimeIndex, freq: str = "ME") -> pd.DatetimeIndex:
     """Generate rebalance dates based on frequency."""
     return index.to_series().resample(freq).last().index
-
-def _get_rebalance_frequency(rebalance: str) -> str:
-    """Convert rebalance parameter to pandas frequency string."""
-    rebalance_map = {
-        "ME": "ME",  # Month End
-        "MS": "MS",  # Month Start
-        "QE": "QE",  # Quarter End
-        "QS": "QS",  # Quarter Start
-        "YE": "YE",  # Year End
-        "YS": "YS",  # Year Start
-    }
-    return rebalance_map.get(rebalance, "ME")  # Default to month end
 
 def cross_sectional_ls(
     returns: pd.DataFrame,
@@ -36,15 +23,13 @@ def cross_sectional_ls(
     - Turnover cap applied per rebalance step
     - Linear transaction costs applied from daily weight changes
 
-    Returns dict with series, weights, Sharpe/Sortino, max drawdown, avg turnover, and a leakage flag.
+    Returns dict with weights, strategy gross returns, strategy net returns, and t-cost vector.
     """
     returns = returns.dropna(how="all").copy()
     scores = scores.reindex_like(returns).copy()
     returns, scores = returns.dropna().copy(), scores.dropna().copy()
 
-    # Rebalance schedule
-    rebalance_freq = _get_rebalance_frequency(rebalance)
-    rebal_idx = _rebalance_dates(returns.index, rebalance_freq)
+    rebal_idx = _rebalance_dates(returns.index)
     weights = pd.DataFrame(0.0, index=returns.index, columns=returns.columns)
     prev_w = pd.Series(0.0, index=returns.columns)
 
@@ -101,14 +86,9 @@ def cross_sectional_ls(
 
     out = {
         "weights": weights,
-        "series_gross": strat_gross,
-        "series_net": strat_net,
-        "sharpe_gross": sharpe(strat_gross, "daily"),
-        "sharpe_net": sharpe(strat_net, "daily"),
-        "sortino_net": sortino(strat_net, "daily"),
-        "max_dd": max_drawdown((1.0 + strat_net).cumprod()),
-        "avg_turnover": float(daily_turn.resample(rebalance).sum().mean() if len(daily_turn) else 0.0),
-        "leakage_flag": bool(delay_days < 1),
+        "strategy_gross_returns": strat_gross,
+        "strategy_net_returns": strat_net,
+        "t_cost_vector": tc,
     }
     return out
 
@@ -126,13 +106,14 @@ def plot_strategy_results(strategy_weights: pd.DataFrame,
     # Calculate equal weight returns
     equal_weight_returns = (equal_weight_weights * returns).sum(axis=1)
     
-    # Calculate pure Sharpe ratios
-    strategy_pure_sharpe_net = pure_sharpe(strategy_net_returns, "daily")
-    strategy_pure_sharpe_gross = pure_sharpe(strategy_gross_returns, "daily")
-    equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
+    # Calculate basic metrics manually (no metrics import)
+    strategy_pure_sharpe_net = strategy_net_returns.mean() / strategy_net_returns.std() * np.sqrt(252) if strategy_net_returns.std() > 0 else 0
+    strategy_pure_sharpe_gross = strategy_gross_returns.mean() / strategy_gross_returns.std() * np.sqrt(252) if strategy_gross_returns.std() > 0 else 0
+    equal_weight_pure_sharpe = equal_weight_returns.mean() / equal_weight_returns.std() * np.sqrt(252) if equal_weight_returns.std() > 0 else 0
     
-    # Calculate information ratio
-    info_ratio = information_ratio(strategy_net_returns, equal_weight_returns, "daily")
+    # Calculate information ratio manually
+    excess_returns = strategy_net_returns - equal_weight_returns
+    info_ratio = excess_returns.mean() / excess_returns.std() * np.sqrt(252) if excess_returns.std() > 0 else 0
     
     # 1. Net performance, gross performance, and equal weight baseline
     ax1 = axes[0, 0]
@@ -157,7 +138,8 @@ def plot_strategy_results(strategy_weights: pd.DataFrame,
         for i in range(rolling_window, len(strategy_net_returns)):
             strategy_window = strategy_net_returns.iloc[i-rolling_window:i]
             equal_weight_window = equal_weight_returns.iloc[i-rolling_window:i]
-            ir = information_ratio(strategy_window, equal_weight_window, "daily")
+            excess_window = strategy_window - equal_weight_window
+            ir = excess_window.mean() / excess_window.std() * np.sqrt(252) if excess_window.std() > 0 else 0
             rolling_ir.append(ir)
         
         rolling_ir_series = pd.Series(rolling_ir, index=strategy_net_returns.index[rolling_window:])
@@ -222,7 +204,7 @@ def plot_strategy_results(strategy_weights: pd.DataFrame,
     
     return plot_path
 
-def equal_weight_baseline(returns: pd.DataFrame, rebalance: str = "ME") -> pd.DataFrame:
+def equal_weight_baseline(returns: pd.DataFrame, rebalance: str = "ME") -> dict:
     """
     Calculate equal-weight baseline weights with monthly rebalancing and intra-month drift.
     
@@ -231,14 +213,12 @@ def equal_weight_baseline(returns: pd.DataFrame, rebalance: str = "ME") -> pd.Da
         rebalance: Rebalancing frequency ("ME" for month-end, "MS" for month-start, etc.)
     
     Returns:
-        DataFrame of equal-weight baseline weights
+        Dictionary with weights and strategy returns
     """
     n_portfolios = returns.shape[1]
     initial_weight = 1.0 / n_portfolios
     
-    # Get rebalance dates
-    rebalance_freq = _get_rebalance_frequency(rebalance)
-    rebal_dates = _rebalance_dates(returns.index, rebalance_freq)
+    rebal_dates = _rebalance_dates(returns.index)
     
     # Initialize weights DataFrame
     weights = pd.DataFrame(0.0, index=returns.index, columns=returns.columns)
@@ -274,5 +254,11 @@ def equal_weight_baseline(returns: pd.DataFrame, rebalance: str = "ME") -> pd.Da
         # Assign to main weights DataFrame
         weights.loc[period_mask] = period_weights
     
-    return weights
+    # Calculate strategy returns
+    strategy_returns = (weights * returns).sum(axis=1)
+    
+    return {
+        "weights": weights,
+        "strategy_returns": strategy_returns,
+    }
 
