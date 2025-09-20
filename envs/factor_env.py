@@ -9,12 +9,13 @@ from engine.backtester import cross_sectional_ls, run_in_sample_backtest, equal_
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
+from .reward_calculator import load_reward_config, calculate_reward
 
 class FactorImproveEnv(gym.Env):
     """Enhanced environment for factor improvement with OBSERVE and FACTOR_IMPROVE actions."""
     metadata = {"render_modes": []}
 
-    def __init__(self, data_path, test_train_split, timesteps):
+    def __init__(self, data_path, test_train_split, timesteps, reward_config_path=None):
         super().__init__()
         
         # Get the project root directory (where this file is located)
@@ -24,11 +25,26 @@ class FactorImproveEnv(gym.Env):
         self.data_path = str(project_root / data_path)
         self.returns = load_ff25_daily(self.data_path)
         self.split = int(test_train_split * len(self.returns))
-        self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
+
+        self.params = {
+            "top_q": 0.2,
+            "turnover_cap": 1.5,
+            "delay_days": 1
+        }
+        
+        # Load reward configuration
+        self.reward_config = load_reward_config(reward_config_path)
+
         self.timesteps = timesteps
         self.budget = timesteps
         self.steps_used = 0
-        self.last_eval = {"oos_sharpe": 0.0, "turnover": 0.0, "tests_pass": True, "leak": False}
+
+        self.last_eval = {
+            "oos_sharpe": 0.0,
+            "turnover": 0.0,
+            "tests_pass": True,
+            "leak": False
+        }
         
         # Load baseline factor using absolute path
         baseline_path = project_root / "factors" / "baseline_program.json"
@@ -38,11 +54,13 @@ class FactorImproveEnv(gym.Env):
         # Reward tracking
         self.episode_rewards = []
         self.incremental_rewards = []
-        self.baseline_performance = None
         self.current_performance = None
         
         # Equal-weight baseline performance (calculated once)
         self.equal_weight_baseline = None
+        
+        # Track last improvement from factor_improve actions
+        self.last_improvement = 0.0
         
         # Observation tools available
         self.observation_tools = {
@@ -57,11 +75,11 @@ class FactorImproveEnv(gym.Env):
             "last_eval": self.last_eval,
             "params": self.params,
             "current_program": self.current_program,
-            "baseline_performance": self.baseline_performance,
             "current_performance": self.current_performance,
             "episode_rewards": self.episode_rewards,
             "incremental_rewards": self.incremental_rewards,
-            "equal_weight_baseline": self.equal_weight_baseline
+            "equal_weight_baseline": self.equal_weight_baseline,
+            "last_improvement": self.last_improvement
         }
         
         # Include validation errors if they exist
@@ -81,9 +99,9 @@ class FactorImproveEnv(gym.Env):
         # Reset reward tracking
         self.episode_rewards = []
         self.incremental_rewards = []
-        self.baseline_performance = None
         self.current_performance = None
         self.equal_weight_baseline = None
+        self.last_improvement = 0.0
         
         return self._obs(), {}
 
@@ -99,7 +117,6 @@ class FactorImproveEnv(gym.Env):
         """Execute analyze_factor_performance tool."""
         scores = evaluate_program(factor_program, self.returns)
         return analyze_factor_performance(scores, self.returns)
-    
 
     def _validate_and_set_program(self, program):
         """Validate and set the new program, replacing the current one entirely."""
@@ -184,8 +201,7 @@ class FactorImproveEnv(gym.Env):
         # Validate the action first
         is_valid_action, action_errors = validate_action(action)
         if not is_valid_action:
-            # Give bad reward for invalid actions
-            reward = -2.0
+            reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
             self.last_eval = {
                 "oos_sharpe": 0.0,
                 "turnover": 0.0,
@@ -210,26 +226,9 @@ class FactorImproveEnv(gym.Env):
                 else:
                     result = self.observation_tools[tool]()
                 
-                self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
-                    "tests_pass": True,
-                    "leak": False,
-                    "observation_result": result,
-                    "observation_tool": tool
-                }
-                
-                # Small positive reward for successful observation
-                reward = 0.1
+                reward = calculate_reward("OBSERVE", self.reward_config, success=True)
             else:
-                self.last_eval = {
-                    "oos_sharpe": 0.0,
-                    "turnover": 0.0,
-                    "tests_pass": False,
-                    "leak": False,
-                    "validation_errors": [f"Unknown observation tool: {tool}"]
-                }
-                reward = -1.0
+                reward = calculate_reward("OBSERVE", self.reward_config, success=False)
 
         elif atype == "FACTOR_IMPROVE":
             new_program = action.get("new_program")
@@ -243,25 +242,25 @@ class FactorImproveEnv(gym.Env):
             # Update current performance
             self.current_performance = is_results
             
-            # Calculate incremental reward
-            if self.baseline_performance is None:
-                print("setting baseline performance")
-                # First improvement - set baseline
-                self.baseline_performance = self._run_in_sample_backtest(self.baseline_program)
-            
             # Set equal-weight baseline if not already set
             if self.equal_weight_baseline is None:
                 self.equal_weight_baseline = is_results["equal_weight_baseline"]
             
-            baseline_sharpe = self.baseline_performance["sharpe_net"]
+            # Calculate improvement vs equal weight baseline
             current_sharpe = is_results["sharpe_net"]
             equal_weight_sharpe = is_results["equal_weight_baseline"]["sharpe_net"]
-            improvement = current_sharpe - baseline_sharpe
+            improvement = current_sharpe - equal_weight_sharpe
             
-            # Reward based on improvement
-            incremental_reward = improvement * 2.0  # Scale factor
+            # Update last improvement
+            self.last_improvement = improvement
+            
+            # Calculate reward
+            incremental_reward = calculate_reward("FACTOR_IMPROVE", self.reward_config,
+                                                current_sharpe=current_sharpe,
+                                                equal_weight_sharpe=equal_weight_sharpe)
             self.incremental_rewards.append(incremental_reward)
             
+            # Update last_eval only for factor_improve actions
             self.last_eval = {
                 "oos_sharpe": float(is_results["sharpe_net"]),
                 "turnover": float(is_results["avg_turnover"]),
@@ -290,14 +289,7 @@ class FactorImproveEnv(gym.Env):
             reward = incremental_reward
 
         elif atype == "REFLECT":
-            self.last_eval = {
-                "oos_sharpe": 0.0,
-                "turnover": 0.0,
-                "tests_pass": True,
-                "leak": False,
-                "reflection": action.get("note", "")
-            }
-            reward = 0.0
+            reward = calculate_reward("REFLECT", self.reward_config)
 
         elif atype == "STOP":
             # Automatically run OOS evaluation when agent chooses to stop
@@ -329,12 +321,13 @@ class FactorImproveEnv(gym.Env):
                 }
             }
 
-            # Final reward calculation
-            base = 0.7 * d_sharpe
-            costs = 0.06 * turnover + 0.01 * self.steps_used
-            guard = 0.5 if tests_pass else -1.0
-            pen = -1.0 if leak else 0.0
-            reward = float(np.tanh(base - costs) + guard + pen)
+            # Calculate final reward
+            reward = calculate_reward("STOP", self.reward_config,
+                                    oos_sharpe=d_sharpe,
+                                    turnover=turnover,
+                                    steps_used=self.steps_used,
+                                    tests_pass=tests_pass,
+                                    leak=leak)
             
             # Add incremental rewards
             if self.incremental_rewards:

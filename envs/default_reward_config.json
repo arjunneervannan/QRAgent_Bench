@@ -1,0 +1,23 @@
+{
+  "factor_improve": {
+    "base_reward_multiplier": 2.0,
+    "improvement_formula": "current_sharpe - equal_weight_sharpe"
+  },
+  "observe": {
+    "success_reward": 0.1,
+    "failure_reward": -1.0
+  },
+  "reflect": {
+    "reward": 0.1
+  },
+  "stop": {
+    "base_multiplier": 0.7,
+    "cost_per_turnover": 0.06,
+    "cost_per_step": 0.01,
+    "pass_guard": 0.5,
+    "fail_guard": -1.0
+  },
+  "validation_error": {
+    "reward": -2.0
+  }
+}
