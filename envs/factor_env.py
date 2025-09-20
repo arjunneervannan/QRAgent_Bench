@@ -78,7 +78,7 @@ class FactorImproveEnv(gym.Env):
         
         # Reset reward tracking
         self.episode_rewards = []
-        self.incremental_rewards = []s
+        self.incremental_rewards = []
         self.last_improvement = 0.0
         self.previous_information_ratio = 0.0
         self.has_performance_data = False
