@@ -160,7 +160,7 @@ class FactorImproveEnv(gym.Env):
         ret_is, sc_is = self._sample_10_year_period(ret_is, sc_is)
         
         # Run factor-based backtest
-        backtest_results = cross_sectional_ls(
+        factor_results = cross_sectional_ls(
             returns=ret_is,
             scores=sc_is,
             **self.params
@@ -168,35 +168,36 @@ class FactorImproveEnv(gym.Env):
         
         # Calculate equal weight baseline
         baseline_results = equal_weight_baseline(ret_is, rebalance=self.params.get("rebalance", "ME"))
-        backtest_results["baseline_weights"] = baseline_results["weights"]
-        backtest_results["equal_weight_returns"] = baseline_results["strategy_returns"]
+        
+        # Extract weights to separate variables
+        strategy_weights = factor_results["weights"]
+        baseline_weights = baseline_results["weights"]
         
         # Extract strategy returns
-        strategy_net = backtest_results["strategy_net_returns"]
-        strategy_gross = backtest_results["strategy_gross_returns"]
+        strategy_net = factor_results["strategy_net_returns"]
+        strategy_gross = factor_results["strategy_gross_returns"]
         equal_weight_returns = baseline_results["strategy_returns"]
         
-        # Calculate information ratio
+        # Calculate metrics
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
-        backtest_results["information_ratio"] = info_ratio
-        
-        # Calculate pure Sharpe ratios
         strategy_pure_sharpe = pure_sharpe(strategy_net, "daily")
         equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
-        backtest_results["strategy_pure_sharpe"] = strategy_pure_sharpe
-        backtest_results["equal_weight_pure_sharpe"] = equal_weight_pure_sharpe
-        
-        # Calculate improvement vs equal weight baseline
         current_sharpe = sharpe(strategy_net, "daily")
         equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
         improvement = current_sharpe - equal_weight_sharpe
-        backtest_results["improvement"] = improvement
         
-        # Add additional metrics for compatibility
-        backtest_results["sharpe_net"] = current_sharpe
-        backtest_results["sharpe_gross"] = sharpe(strategy_gross, "daily")
-        backtest_results["series_net"] = strategy_net
-        backtest_results["series_gross"] = strategy_gross
+        # Create clean backtest results with only essential metrics
+        backtest_results = {
+            "sharpe_net": current_sharpe,
+            "sharpe_gross": sharpe(strategy_gross, "daily"),
+            "information_ratio": info_ratio,
+            "strategy_pure_sharpe": strategy_pure_sharpe,
+            "equal_weight_pure_sharpe": equal_weight_pure_sharpe,
+            "improvement": improvement,
+            "series_net": strategy_net,
+            "series_gross": strategy_gross,
+            "equal_weight_returns": equal_weight_returns,
+        }
         
         # Add plot path if requested
         if generate_plot:
@@ -210,7 +211,7 @@ class FactorImproveEnv(gym.Env):
                 plot_path = f"strategy_results_{start_date}_{end_date}.png"
             
             plot_path = plot_strategy_results(
-                strategy_weights=backtest_results["weights"],
+                strategy_weights=strategy_weights,
                 strategy_net_returns=backtest_results["series_net"],
                 strategy_gross_returns=backtest_results["series_gross"],
                 equal_weight_weights=baseline_weights,
@@ -247,25 +248,47 @@ class FactorImproveEnv(gym.Env):
         ret_oos = self.returns.iloc[self.split:]
         sc_oos = scores.iloc[self.split:]
         
-        # Calculate equal-weight baseline weights for out-of-sample period
-        baseline_weights = equal_weight_baseline(ret_oos, rebalance=self.params.get("rebalance", "ME"))
-        
         # Run factor-based backtest
-        factor_results = cross_sectional_ls(ret_oos, sc_oos, **self.params)
+        factor_results = cross_sectional_ls(
+            returns=ret_oos,
+            scores=sc_oos,
+            **self.params
+        )
         
-        # Add equal-weight weights to results
-        factor_results["baseline_weights"] = baseline_weights
+        # Calculate equal weight baseline
+        baseline_results = equal_weight_baseline(ret_oos, rebalance=self.params.get("rebalance", "ME"))
         
-        # Calculate equal weight returns for information ratio
-        equal_weight_returns = (baseline_weights * ret_oos).sum(axis=1)
-        factor_results["equal_weight_returns"] = equal_weight_returns
+        # Extract weights to separate variables
+        strategy_weights = factor_results["weights"]
+        baseline_weights = baseline_results["weights"]
         
-        # Calculate information ratio
-        strategy_net = factor_results["series_net"]
+        # Extract strategy returns
+        strategy_net = factor_results["strategy_net_returns"]
+        strategy_gross = factor_results["strategy_gross_returns"]
+        equal_weight_returns = baseline_results["strategy_returns"]
+        
+        # Calculate metrics
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
-        factor_results["information_ratio"] = info_ratio
+        strategy_pure_sharpe = pure_sharpe(strategy_net, "daily")
+        equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
+        current_sharpe = sharpe(strategy_net, "daily")
+        equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
+        improvement = current_sharpe - equal_weight_sharpe
         
-        return factor_results
+        # Create clean backtest results with only essential metrics
+        backtest_results = {
+            "sharpe_net": current_sharpe,
+            "sharpe_gross": sharpe(strategy_gross, "daily"),
+            "information_ratio": info_ratio,
+            "strategy_pure_sharpe": strategy_pure_sharpe,
+            "equal_weight_pure_sharpe": equal_weight_pure_sharpe,
+            "improvement": improvement,
+            "series_net": strategy_net,
+            "series_gross": strategy_gross,
+            "equal_weight_returns": equal_weight_returns,
+        }
+        
+        return backtest_results
 
     def step(self, action: dict):
         reward = 0.0
