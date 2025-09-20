@@ -6,8 +6,20 @@ import seaborn as sns
 from .metrics import *
 
 def _rebalance_dates(index: pd.DatetimeIndex, freq: str = "ME") -> pd.DatetimeIndex:
-    # month-end boundaries using resample
+    """Generate rebalance dates based on frequency."""
     return index.to_series().resample(freq).last().index
+
+def _get_rebalance_frequency(rebalance: str) -> str:
+    """Convert rebalance parameter to pandas frequency string."""
+    rebalance_map = {
+        "ME": "ME",  # Month End
+        "MS": "MS",  # Month Start
+        "QE": "QE",  # Quarter End
+        "QS": "QS",  # Quarter Start
+        "YE": "YE",  # Year End
+        "YS": "YS",  # Year Start
+    }
+    return rebalance_map.get(rebalance, "ME")  # Default to month end
 
 def cross_sectional_ls(
     returns: pd.DataFrame,
@@ -31,7 +43,8 @@ def cross_sectional_ls(
     returns, scores = returns.dropna().copy(), scores.dropna().copy()
 
     # Rebalance schedule
-    rebal_idx = _rebalance_dates(returns.index, rebalance)
+    rebalance_freq = _get_rebalance_frequency(rebalance)
+    rebal_idx = _rebalance_dates(returns.index, rebalance_freq)
     weights = pd.DataFrame(0.0, index=returns.index, columns=returns.columns)
     prev_w = pd.Series(0.0, index=returns.columns)
 
@@ -209,16 +222,57 @@ def plot_strategy_results(strategy_weights: pd.DataFrame,
     
     return plot_path
 
-def equal_weight_baseline(returns: pd.DataFrame) -> pd.DataFrame:
-    """Calculate equal-weight baseline weights with drift for the same time period as backtest."""
-    n_portfolios = returns.shape[1]
-    weights = pd.DataFrame(1.0 / n_portfolios, index=returns.index, columns=returns.columns)
+def equal_weight_baseline(returns: pd.DataFrame, rebalance: str = "ME") -> pd.DataFrame:
+    """
+    Calculate equal-weight baseline weights with monthly rebalancing and intra-month drift.
     
-    # Let weights drift based on returns (no look-ahead bias)
-    for i in range(1, len(returns)):
-        prev_weights = weights.iloc[i-1]
-        new_weights = prev_weights * (1 + returns.iloc[i-1])
-        weights.iloc[i] = new_weights / new_weights.sum()
+    Args:
+        returns: DataFrame of returns
+        rebalance: Rebalancing frequency ("ME" for month-end, "MS" for month-start, etc.)
+    
+    Returns:
+        DataFrame of equal-weight baseline weights
+    """
+    n_portfolios = returns.shape[1]
+    initial_weight = 1.0 / n_portfolios
+    
+    # Get rebalance dates
+    rebalance_freq = _get_rebalance_frequency(rebalance)
+    rebal_dates = _rebalance_dates(returns.index, rebalance_freq)
+    
+    # Initialize weights DataFrame
+    weights = pd.DataFrame(0.0, index=returns.index, columns=returns.columns)
+    
+    # Vectorized approach: process each rebalancing period
+    for i, rebal_date in enumerate(rebal_dates):
+        # Find the next rebalancing date (or end of data)
+        next_rebal_date = rebal_dates[i + 1] if i + 1 < len(rebal_dates) else returns.index[-1]
+        
+        # Get the period data
+        period_mask = (returns.index >= rebal_date) & (returns.index <= next_rebal_date)
+        period_returns = returns.loc[period_mask]
+        
+        if period_returns.empty:
+            continue
+            
+        # Start with equal weights at rebalancing date
+        period_weights = pd.DataFrame(initial_weight, index=period_returns.index, columns=period_returns.columns)
+        
+        # Vectorized drift calculation within the period
+        if len(period_returns) > 1:
+            # Calculate cumulative returns for drift
+            cum_returns = (1 + period_returns).cumprod()
+            
+            # Apply drift to weights (vectorized)
+            for j in range(1, len(period_returns)):
+                # Previous day's weights adjusted by returns
+                prev_weights = period_weights.iloc[j-1]
+                new_weights = prev_weights * (1 + period_returns.iloc[j-1])
+                # Renormalize to maintain equal weight
+                period_weights.iloc[j] = new_weights / new_weights.sum()
+        
+        # Assign to main weights DataFrame
+        weights.loc[period_mask] = period_weights
     
     return weights
 

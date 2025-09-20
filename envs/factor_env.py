@@ -30,7 +30,8 @@ class FactorImproveEnv(gym.Env):
         self.params = {
             "top_q": 0.2,
             "turnover_cap": 1.5,
-            "delay_days": 1
+            "delay_days": 1,
+            "rebalance": "ME"
         }
         
         # Load reward configuration
@@ -100,7 +101,7 @@ class FactorImproveEnv(gym.Env):
         super().reset(seed=seed)
         self.budget = self.timesteps
         self.steps_used = 0
-        self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1}
+        self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1, "rebalance": "ME"}
         self.last_eval = {
             "information_ratio": 0.0,
             "strategy_pure_sharpe": 0.0,
@@ -166,16 +167,29 @@ class FactorImproveEnv(gym.Env):
         )
         
         # Calculate equal weight baseline weights
-        equal_weight_weights = equal_weight_baseline(ret_is)
-        backtest_results["equal_weight_weights"] = equal_weight_weights
+        baseline_weights = equal_weight_baseline(ret_is, rebalance=self.params.get("rebalance", "ME"))
+        backtest_results["baseline_weights"] = baseline_weights
         
         # Calculate equal weight returns for information ratio
-        equal_weight_returns = (equal_weight_weights * ret_is).sum(axis=1)
+        equal_weight_returns = (baseline_weights * ret_is).sum(axis=1)
+        backtest_results["equal_weight_returns"] = equal_weight_returns
         
         # Calculate information ratio
         strategy_net = backtest_results["series_net"]
         info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
         backtest_results["information_ratio"] = info_ratio
+        
+        # Calculate pure Sharpe ratios
+        strategy_pure_sharpe = pure_sharpe(strategy_net, "daily")
+        equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
+        backtest_results["strategy_pure_sharpe"] = strategy_pure_sharpe
+        backtest_results["equal_weight_pure_sharpe"] = equal_weight_pure_sharpe
+        
+        # Calculate improvement vs equal weight baseline
+        current_sharpe = backtest_results["sharpe_net"]
+        equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
+        improvement = current_sharpe - equal_weight_sharpe
+        backtest_results["improvement"] = improvement
         
         # Add plot path if requested
         if generate_plot:
@@ -192,7 +206,7 @@ class FactorImproveEnv(gym.Env):
                 strategy_weights=backtest_results["weights"],
                 strategy_net_returns=backtest_results["series_net"],
                 strategy_gross_returns=backtest_results["series_gross"],
-                equal_weight_weights=equal_weight_weights,
+                equal_weight_weights=baseline_weights,
                 returns=ret_is,
                 title=title,
                 plot_path=plot_path
@@ -227,16 +241,17 @@ class FactorImproveEnv(gym.Env):
         sc_oos = scores.iloc[self.split:]
         
         # Calculate equal-weight baseline weights for out-of-sample period
-        equal_weight_weights = equal_weight_baseline(ret_oos)
+        baseline_weights = equal_weight_baseline(ret_oos, rebalance=self.params.get("rebalance", "ME"))
         
         # Run factor-based backtest
         factor_results = cross_sectional_ls(ret_oos, sc_oos, **self.params)
         
         # Add equal-weight weights to results
-        factor_results["equal_weight_weights"] = equal_weight_weights
+        factor_results["baseline_weights"] = baseline_weights
         
         # Calculate equal weight returns for information ratio
-        equal_weight_returns = (equal_weight_weights * ret_oos).sum(axis=1)
+        equal_weight_returns = (baseline_weights * ret_oos).sum(axis=1)
+        factor_results["equal_weight_returns"] = equal_weight_returns
         
         # Calculate information ratio
         strategy_net = factor_results["series_net"]
@@ -301,36 +316,23 @@ class FactorImproveEnv(gym.Env):
                 
                 # Set equal-weight baseline if not already set
                 if self.equal_weight_baseline is None:
-                    self.equal_weight_baseline = is_results["equal_weight_weights"]
-                
-                # Calculate equal weight returns and metrics
-                equal_weight_weights = is_results["equal_weight_weights"]
-                equal_weight_returns = (equal_weight_weights * self.returns.iloc[:self.split]).sum(axis=1)
-                
-                # Calculate pure Sharpe ratios
-                strategy_pure_sharpe = pure_sharpe(is_results["series_net"], "daily")
-                equal_weight_pure_sharpe = pure_sharpe(equal_weight_returns, "daily")
-                
-                # Calculate improvement vs equal weight baseline
-                current_sharpe = is_results["sharpe_net"]
-                equal_weight_sharpe = sharpe(equal_weight_returns, "daily")
-                improvement = current_sharpe - equal_weight_sharpe
+                    self.equal_weight_baseline = is_results["baseline_weights"]
                 
                 # Update last improvement
-                self.last_improvement = improvement
+                self.last_improvement = is_results["improvement"]
                 
                 # Calculate reward
                 incremental_reward = calculate_reward("FACTOR_IMPROVE", self.reward_config,
-                                                    current_sharpe=current_sharpe,
-                                                    equal_weight_sharpe=equal_weight_sharpe)
+                                                    current_sharpe=is_results["sharpe_net"],
+                                                    equal_weight_sharpe=sharpe(is_results["equal_weight_returns"], "daily"))
                 self.incremental_rewards.append(incremental_reward)
                 
                 # Update last_eval with clean metrics for agent
                 self.last_eval = {
                     # Core performance metrics
                     "information_ratio": float(is_results["information_ratio"]),
-                    "strategy_pure_sharpe": float(strategy_pure_sharpe),
-                    "benchmark_pure_sharpe": float(equal_weight_pure_sharpe),
+                    "strategy_pure_sharpe": float(is_results["strategy_pure_sharpe"]),
+                    "benchmark_pure_sharpe": float(is_results["equal_weight_pure_sharpe"]),
                     "strategy_sortino": float(is_results["sortino_net"]),
                     "max_drawdown": float(is_results["max_dd"]),
                     
@@ -339,7 +341,7 @@ class FactorImproveEnv(gym.Env):
                     "leak": bool(is_results["leakage_flag"]),
                     
                     # Additional context
-                    "improvement": float(improvement),
+                    "improvement": float(is_results["improvement"]),
                     "plot_path": is_results.get("plot_path"),
                     "program_updated": True
                 }
@@ -394,8 +396,7 @@ class FactorImproveEnv(gym.Env):
 
             # Calculate OOS pure Sharpe ratios
             oos_strategy_net = oos_results["series_net"]
-            oos_equal_weight_weights = oos_results["equal_weight_weights"]
-            oos_equal_weight_returns = (oos_equal_weight_weights * self.returns.iloc[self.split:]).sum(axis=1)
+            oos_equal_weight_returns = oos_results["equal_weight_returns"]
             
             strategy_pure_sharpe = pure_sharpe(oos_strategy_net, "daily")
             equal_weight_pure_sharpe = pure_sharpe(oos_equal_weight_returns, "daily")
