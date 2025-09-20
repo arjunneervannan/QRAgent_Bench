@@ -71,6 +71,9 @@ class FactorImproveEnv(gym.Env):
         # Track last improvement from factor_improve actions
         self.last_improvement = 0.0
         
+        # Track whether we have performance data from backtests
+        self.has_performance_data = False
+        
         # Observation tools available
         self.observation_tools = {
             "describe_data": self._describe_data,
@@ -78,24 +81,6 @@ class FactorImproveEnv(gym.Env):
             "analyze_factor_performance": self._analyze_factor_performance
         }
 
-    def _obs(self):
-        obs = {
-            "budget_left": self.budget,
-            "last_eval": self.last_eval,
-            "params": self.params,
-            "current_program": self.current_program,
-            "current_performance": self.current_performance,
-            "episode_rewards": self.episode_rewards,
-            "incremental_rewards": self.incremental_rewards,
-            "equal_weight_baseline": self.equal_weight_baseline,
-            "last_improvement": self.last_improvement
-        }
-        
-        # Include validation errors if they exist
-        if "validation_errors" in self.last_eval:
-            obs["validation_errors"] = self.last_eval["validation_errors"]
-        
-        return obs
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -119,8 +104,9 @@ class FactorImproveEnv(gym.Env):
         self.current_performance = None
         self.equal_weight_baseline = None
         self.last_improvement = 0.0
+        self.has_performance_data = False
         
-        return self._obs(), {}
+        return {"budget_left": self.budget}, {}
 
     def _describe_data(self, **kwargs):
         """Execute describe_data tool."""
@@ -293,27 +279,20 @@ class FactorImproveEnv(gym.Env):
     def step(self, action: dict):
         reward = 0.0
         terminated = False
-        info = {}
+        
+        # Initialize observation dictionary
+        obs = {"budget_left": self.budget}
 
         # Validate the action first
         is_valid_action, action_errors = validate_action(action)
         if not is_valid_action:
             reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
-            self.last_eval = {
-                "information_ratio": 0.0,
-                "strategy_pure_sharpe": 0.0,
-                "benchmark_pure_sharpe": 0.0,
-                "strategy_sortino": 0.0,
-                "max_drawdown": 0.0,
-                "tests_pass": False,
-                "leak": False,
-                "validation_errors": action_errors
-            }
+            obs["validation_errors"] = action_errors
             self.steps_used += 1
             self.budget -= 1
             if self.budget <= 0:
                 terminated = True
-            return self._obs(), reward, terminated, False, info
+            return obs, reward, terminated
 
         atype = action.get("type")
 
@@ -326,8 +305,11 @@ class FactorImproveEnv(gym.Env):
                 else:
                     result = self.observation_tools[tool]()
                 
+                # Add data observation to obs
+                obs["observation_result"] = result
                 reward = calculate_reward("OBSERVE", self.reward_config, success=True)
             else:
+                obs["validation_errors"] = [f"Unknown observation tool: {tool}"]
                 reward = calculate_reward("OBSERVE", self.reward_config, success=False)
 
         elif atype == "FACTOR_IMPROVE":
@@ -352,14 +334,18 @@ class FactorImproveEnv(gym.Env):
                 self.last_improvement = is_results["improvement"]
                 
                 # Calculate reward
-                incremental_reward = calculate_reward("FACTOR_IMPROVE", self.reward_config,
-                                                    current_sharpe=is_results["sharpe_net"],
-                                                    equal_weight_sharpe=sharpe(is_results["equal_weight_returns"], "daily"))
+                incremental_reward = calculate_reward(
+                    "FACTOR_IMPROVE", self.reward_config,
+                    current_sharpe=is_results["sharpe_net"],
+                    equal_weight_sharpe=sharpe(is_results["equal_weight_returns"], "daily")
+                )
+                
                 self.incremental_rewards.append(incremental_reward)
                 
                 # Update last_eval with clean metrics for agent
                 self.last_eval = {
                     # Core performance metrics
+                    "sharpe_net": float(is_results["sharpe_net"]),
                     "information_ratio": float(is_results["information_ratio"]),
                     "strategy_pure_sharpe": float(is_results["strategy_pure_sharpe"]),
                     "benchmark_pure_sharpe": float(is_results["equal_weight_pure_sharpe"]),
@@ -376,41 +362,31 @@ class FactorImproveEnv(gym.Env):
                     "program_updated": True
                 }
                 
+                # Mark that we now have performance data
+                self.has_performance_data = True
+                
+                # Add investment performance to obs
+                obs["investment_performance"] = {
+                    "sharpe_net": float(is_results["sharpe_net"]),
+                    "information_ratio": float(is_results["information_ratio"]),
+                    "improvement": float(is_results["improvement"]),
+                    "tests_pass": not is_results["leakage_flag"],
+                    "leak": bool(is_results["leakage_flag"]),
+                }
+                
                 reward = incremental_reward
                 
             except ValueError as e:
                 # Program validation error
                 error_msg = str(e)
                 reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
-                
-                self.last_eval = {
-                    "information_ratio": 0.0,
-                    "strategy_pure_sharpe": 0.0,
-                    "benchmark_pure_sharpe": 0.0,
-                    "strategy_sortino": 0.0,
-                    "max_drawdown": 0.0,
-                    "tests_pass": False,
-                    "leak": False,
-                    "validation_errors": [error_msg],
-                    "program_updated": False
-                }
+                obs["validation_errors"] = [error_msg]
                 
             except Exception as e:
                 # Backtesting or other runtime error
                 error_msg = f"Backtest error: {str(e)}"
                 reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
-                
-                self.last_eval = {
-                    "information_ratio": 0.0,
-                    "strategy_pure_sharpe": 0.0,
-                    "benchmark_pure_sharpe": 0.0,
-                    "strategy_sortino": 0.0,
-                    "max_drawdown": 0.0,
-                    "tests_pass": False,
-                    "leak": False,
-                    "runtime_errors": [error_msg],
-                    "program_updated": False
-                }
+                obs["validation_errors"] = [error_msg]
 
         elif atype == "REFLECT":
             reward = calculate_reward("REFLECT", self.reward_config)
@@ -469,4 +445,4 @@ class FactorImproveEnv(gym.Env):
         if self.budget <= 0:
             terminated = True
 
-        return self._obs(), reward, terminated, False, info
+        return obs, reward, terminated
