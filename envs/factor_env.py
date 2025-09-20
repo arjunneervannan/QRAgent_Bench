@@ -46,16 +46,6 @@ class FactorImproveEnv(gym.Env):
         self.timesteps = timesteps
         self.budget = timesteps
         self.steps_used = 0
-
-        self.last_eval = {
-            "information_ratio": 0.0,
-            "strategy_pure_sharpe": 0.0,
-            "benchmark_pure_sharpe": 0.0,
-            "strategy_sortino": 0.0,
-            "max_drawdown": 0.0,
-            "tests_pass": True,
-            "leak": False
-        }
         
         # Initialize current program (will be set by first FACTOR_IMPROVE action)
         self.current_program = None
@@ -65,11 +55,9 @@ class FactorImproveEnv(gym.Env):
         self.incremental_rewards = []
         self.current_performance = None
         
-        # Equal-weight baseline performance (calculated once)
-        self.equal_weight_baseline = None
-        
         # Track last improvement from factor_improve actions
         self.last_improvement = 0.0
+        self.previous_information_ratio = 0.0
         
         # Track whether we have performance data from backtests
         self.has_performance_data = False
@@ -87,23 +75,14 @@ class FactorImproveEnv(gym.Env):
         self.budget = self.timesteps
         self.steps_used = 0
         self.params = {"top_q": 0.2, "turnover_cap": 1.5, "delay_days": 1, "rebalance": "ME"}
-        self.last_eval = {
-            "information_ratio": 0.0,
-            "strategy_pure_sharpe": 0.0,
-            "benchmark_pure_sharpe": 0.0,
-            "strategy_sortino": 0.0,
-            "max_drawdown": 0.0,
-            "tests_pass": True,
-            "leak": False
-        }
         self.current_program = None
         
         # Reset reward tracking
         self.episode_rewards = []
         self.incremental_rewards = []
         self.current_performance = None
-        self.equal_weight_baseline = None
         self.last_improvement = 0.0
+        self.previous_information_ratio = 0.0
         self.has_performance_data = False
         
         return {"budget_left": self.budget}, {}
@@ -326,12 +305,17 @@ class FactorImproveEnv(gym.Env):
                 # Update current performance
                 self.current_performance = is_results
                 
-                # Set equal-weight baseline if not already set
-                if self.equal_weight_baseline is None:
-                    self.equal_weight_baseline = is_results["baseline_weights"]
+                # Calculate improvement: current info ratio minus previous
+                current_info_ratio = float(is_results["information_ratio"])
+                if not self.has_performance_data:
+                    # First backtest - improvement is 0
+                    self.last_improvement = 0.0
+                else:
+                    # Subsequent backtests - improvement is current minus previous
+                    self.last_improvement = current_info_ratio - self.previous_information_ratio
                 
-                # Update last improvement
-                self.last_improvement = is_results["improvement"]
+                # Update previous information ratio for next time
+                self.previous_information_ratio = current_info_ratio
                 
                 # Calculate reward
                 incremental_reward = calculate_reward(
@@ -342,8 +326,11 @@ class FactorImproveEnv(gym.Env):
                 
                 self.incremental_rewards.append(incremental_reward)
                 
-                # Update last_eval with clean metrics for agent
-                self.last_eval = {
+                # Mark that we now have performance data
+                self.has_performance_data = True
+                
+                # Add investment performance to obs with all metrics
+                obs["investment_performance"] = {
                     # Core performance metrics
                     "sharpe_net": float(is_results["sharpe_net"]),
                     "information_ratio": float(is_results["information_ratio"]),
@@ -357,21 +344,9 @@ class FactorImproveEnv(gym.Env):
                     "leak": bool(is_results["leakage_flag"]),
                     
                     # Additional context
-                    "improvement": float(is_results["improvement"]),
+                    "improvement": float(self.last_improvement),
                     "plot_path": is_results.get("plot_path"),
                     "program_updated": True
-                }
-                
-                # Mark that we now have performance data
-                self.has_performance_data = True
-                
-                # Add investment performance to obs
-                obs["investment_performance"] = {
-                    "sharpe_net": float(is_results["sharpe_net"]),
-                    "information_ratio": float(is_results["information_ratio"]),
-                    "improvement": float(is_results["improvement"]),
-                    "tests_pass": not is_results["leakage_flag"],
-                    "leak": bool(is_results["leakage_flag"]),
                 }
                 
                 reward = incremental_reward
@@ -407,8 +382,10 @@ class FactorImproveEnv(gym.Env):
             strategy_pure_sharpe = pure_sharpe(oos_strategy_net, "daily")
             equal_weight_pure_sharpe = pure_sharpe(oos_equal_weight_returns, "daily")
             
-            self.last_eval = {
+            # Add final evaluation performance to obs
+            obs["investment_performance"] = {
                 # Core performance metrics
+                "sharpe_net": float(oos_results["sharpe_net"]),
                 "information_ratio": float(oos_results["information_ratio"]),
                 "strategy_pure_sharpe": float(strategy_pure_sharpe),
                 "benchmark_pure_sharpe": float(equal_weight_pure_sharpe),
