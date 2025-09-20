@@ -233,60 +233,89 @@ class FactorImproveEnv(gym.Env):
         elif atype == "FACTOR_IMPROVE":
             new_program = action.get("new_program")
             
-            # Validate and set the new program
-            self._validate_and_set_program(new_program)
-            
-            # Run in-sample backtest
-            is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
-            
-            # Update current performance
-            self.current_performance = is_results
-            
-            # Set equal-weight baseline if not already set
-            if self.equal_weight_baseline is None:
-                self.equal_weight_baseline = is_results["equal_weight_baseline"]
-            
-            # Calculate improvement vs equal weight baseline
-            current_sharpe = is_results["sharpe_net"]
-            equal_weight_sharpe = is_results["equal_weight_baseline"]["sharpe_net"]
-            improvement = current_sharpe - equal_weight_sharpe
-            
-            # Update last improvement
-            self.last_improvement = improvement
-            
-            # Calculate reward
-            incremental_reward = calculate_reward("FACTOR_IMPROVE", self.reward_config,
-                                                current_sharpe=current_sharpe,
-                                                equal_weight_sharpe=equal_weight_sharpe)
-            self.incremental_rewards.append(incremental_reward)
-            
-            # Update last_eval only for factor_improve actions
-            self.last_eval = {
-                "oos_sharpe": float(is_results["sharpe_net"]),
-                "turnover": float(is_results["avg_turnover"]),
-                "tests_pass": not is_results["leakage_flag"],
-                "leak": bool(is_results["leakage_flag"]),
-                "in_sample_results": {
-                    "sharpe_gross": float(is_results["sharpe_gross"]),
-                    "sharpe_net": float(is_results["sharpe_net"]),
-                    "sortino_net": float(is_results["sortino_net"]),
-                    "max_dd": float(is_results["max_dd"]),
-                    "avg_turnover": float(is_results["avg_turnover"]),
-                    "plot_path": is_results.get("plot_path")
-                },
-                "equal_weight_baseline": {
-                    "sharpe_gross": float(equal_weight_sharpe),
-                    "sharpe_net": float(equal_weight_sharpe),
-                    "sortino_net": float(is_results["equal_weight_baseline"]["sortino_net"]),
-                    "max_dd": float(is_results["equal_weight_baseline"]["max_dd"]),
-                    "avg_turnover": float(is_results["equal_weight_baseline"]["avg_turnover"])
-                },
-                "improvement": float(improvement),
-                "incremental_reward": float(incremental_reward),
-                "program_updated": True
-            }
-            
-            reward = incremental_reward
+            try:
+                # Validate and set the new program
+                self._validate_and_set_program(new_program)
+                
+                # Run in-sample backtest
+                is_results = self._run_in_sample_backtest(new_program, generate_plot=True)
+                
+                # Update current performance
+                self.current_performance = is_results
+                
+                # Set equal-weight baseline if not already set
+                if self.equal_weight_baseline is None:
+                    self.equal_weight_baseline = is_results["equal_weight_baseline"]
+                
+                # Calculate improvement vs equal weight baseline
+                current_sharpe = is_results["sharpe_net"]
+                equal_weight_sharpe = is_results["equal_weight_baseline"]["sharpe_net"]
+                improvement = current_sharpe - equal_weight_sharpe
+                
+                # Update last improvement
+                self.last_improvement = improvement
+                
+                # Calculate reward
+                incremental_reward = calculate_reward("FACTOR_IMPROVE", self.reward_config,
+                                                    current_sharpe=current_sharpe,
+                                                    equal_weight_sharpe=equal_weight_sharpe)
+                self.incremental_rewards.append(incremental_reward)
+                
+                # Update last_eval only for factor_improve actions
+                self.last_eval = {
+                    "oos_sharpe": float(is_results["sharpe_net"]),
+                    "turnover": float(is_results["avg_turnover"]),
+                    "tests_pass": not is_results["leakage_flag"],
+                    "leak": bool(is_results["leakage_flag"]),
+                    "in_sample_results": {
+                        "sharpe_gross": float(is_results["sharpe_gross"]),
+                        "sharpe_net": float(is_results["sharpe_net"]),
+                        "sortino_net": float(is_results["sortino_net"]),
+                        "max_dd": float(is_results["max_dd"]),
+                        "avg_turnover": float(is_results["avg_turnover"]),
+                        "plot_path": is_results.get("plot_path")
+                    },
+                    "equal_weight_baseline": {
+                        "sharpe_gross": float(equal_weight_sharpe),
+                        "sharpe_net": float(equal_weight_sharpe),
+                        "sortino_net": float(is_results["equal_weight_baseline"]["sortino_net"]),
+                        "max_dd": float(is_results["equal_weight_baseline"]["max_dd"]),
+                        "avg_turnover": float(is_results["equal_weight_baseline"]["avg_turnover"])
+                    },
+                    "improvement": float(improvement),
+                    "incremental_reward": float(incremental_reward),
+                    "program_updated": True
+                }
+                
+                reward = incremental_reward
+                
+            except ValueError as e:
+                # Program validation error
+                error_msg = str(e)
+                reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
+                
+                self.last_eval = {
+                    "oos_sharpe": 0.0,
+                    "turnover": 0.0,
+                    "tests_pass": False,
+                    "leak": False,
+                    "validation_errors": [error_msg],
+                    "program_updated": False
+                }
+                
+            except Exception as e:
+                # Backtesting or other runtime error
+                error_msg = f"Backtest error: {str(e)}"
+                reward = calculate_reward("VALIDATION_ERROR", self.reward_config)
+                
+                self.last_eval = {
+                    "oos_sharpe": 0.0,
+                    "turnover": 0.0,
+                    "tests_pass": False,
+                    "leak": False,
+                    "runtime_errors": [error_msg],
+                    "program_updated": False
+                }
 
         elif atype == "REFLECT":
             reward = calculate_reward("REFLECT", self.reward_config)
