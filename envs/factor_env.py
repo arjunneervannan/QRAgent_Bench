@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
-from engine.backtester import cross_sectional_ls, run_in_sample_backtest
+from engine.backtester import cross_sectional_ls, run_in_sample_backtest, equal_weight_baseline
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
 from factors.validate import validate_action, validate_program
@@ -100,59 +100,6 @@ class FactorImproveEnv(gym.Env):
         scores = evaluate_program(factor_program, self.returns)
         return analyze_factor_performance(scores, self.returns)
     
-    def _calculate_equal_weight_baseline(self, returns_data):
-        """
-        Calculate equal-weight baseline performance with drift.
-        
-        For equal weight with drift:
-        - Start with equal weights (1/25 for each portfolio)
-        - Let weights drift based on returns: w_t+1 = w_t * (1 + r_t) / sum(w_t * (1 + r_t))
-        - This ensures weights sum to 1 but drift based on performance
-        
-        Args:
-            returns_data: DataFrame of returns
-            
-        Returns:
-            dict: Performance metrics similar to cross_sectional_ls output
-        """
-        
-        n_portfolios = returns_data.shape[1]
-        initial_weight = 1.0 / n_portfolios
-        
-        # Initialize weights
-        weights = pd.DataFrame(initial_weight, 
-                             index=returns_data.index, 
-                             columns=returns_data.columns)
-        
-        # Let weights drift based on returns
-        for i in range(1, len(returns_data)):
-            # Previous weights
-            prev_weights = weights.iloc[i-1]
-            
-            # Calculate new weights: w_t = w_{t-1} * (1 + r_{t-1}) / sum(w_{t-1} * (1 + r_{t-1}))
-            # Use previous day's returns to update current day's weights
-            new_weights = prev_weights * (1 + returns_data.iloc[i-1])
-            
-            # Normalize to sum to 1 (drift)
-            weights.iloc[i] = new_weights / new_weights.sum()
-        
-        # Calculate strategy returns
-        strategy_returns = (weights * returns_data).sum(axis=1)
-        
-        # Calculate performance metrics
-        from engine.metrics import sharpe, sortino, max_drawdown
-        
-        return {
-            "weights": weights,
-            "series_gross": strategy_returns,
-            "series_net": strategy_returns,  # No transaction costs for equal weight
-            "sharpe_gross": sharpe(strategy_returns, "daily"),
-            "sharpe_net": sharpe(strategy_returns, "daily"),
-            "sortino_net": sortino(strategy_returns, "daily"),
-            "max_dd": max_drawdown((1.0 + strategy_returns).cumprod()),
-            "avg_turnover": float(weights.diff().abs().sum(axis=1).mean()),
-            "leakage_flag": False
-        }
 
     def _validate_and_set_program(self, program):
         """Validate and set the new program, replacing the current one entirely."""
@@ -179,7 +126,7 @@ class FactorImproveEnv(gym.Env):
         ret_is, sc_is = self._sample_10_year_period(ret_is, sc_is)
         
         # Calculate equal-weight baseline for the same period
-        equal_weight_results = self._calculate_equal_weight_baseline(ret_is)
+        equal_weight_results = equal_weight_baseline(ret_is)
         
         # Run factor-based backtest
         factor_results = run_in_sample_backtest(
@@ -219,7 +166,7 @@ class FactorImproveEnv(gym.Env):
         sc_oos = scores.iloc[self.split:]
         
         # Calculate equal-weight baseline for out-of-sample period
-        equal_weight_results = self._calculate_equal_weight_baseline(ret_oos)
+        equal_weight_results = equal_weight_baseline(ret_oos)
         
         # Run factor-based backtest
         factor_results = cross_sectional_ls(ret_oos, sc_oos, **self.params)
