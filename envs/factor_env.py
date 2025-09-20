@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 import gymnasium as gym
 from engine.data_loader import load_ff25_daily
-from engine.backtester import cross_sectional_ls, run_in_sample_backtest, equal_weight_baseline
+from engine.backtester import cross_sectional_ls, equal_weight_baseline, plot_strategy_results
 from engine.metrics import information_ratio, sharpe, sortino, max_drawdown, pure_sharpe
 from factors.program import evaluate_program
 from engine.data_analysis import describe_data, plot_returns, analyze_factor_performance
@@ -158,21 +158,48 @@ class FactorImproveEnv(gym.Env):
         # Select a random 10-year period from the in-sample data
         ret_is, sc_is = self._sample_10_year_period(ret_is, sc_is)
         
-        # Calculate equal-weight baseline for the same period
-        equal_weight_results = equal_weight_baseline(ret_is)
-        
         # Run factor-based backtest
-        factor_results = run_in_sample_backtest(
-            ret_is, sc_is, 
-            generate_plot=generate_plot,
-            plot_path=plot_path,
+        backtest_results = cross_sectional_ls(
+            returns=ret_is,
+            scores=sc_is,
             **self.params
         )
         
-        # Add equal-weight baseline to results
-        factor_results["equal_weight_baseline"] = equal_weight_results
+        # Calculate equal weight baseline weights
+        equal_weight_weights = equal_weight_baseline(ret_is)
+        backtest_results["equal_weight_weights"] = equal_weight_weights
         
-        return factor_results
+        # Calculate equal weight returns for information ratio
+        equal_weight_returns = (equal_weight_weights * ret_is).sum(axis=1)
+        
+        # Calculate information ratio
+        strategy_net = backtest_results["series_net"]
+        info_ratio = information_ratio(strategy_net, equal_weight_returns, "daily")
+        backtest_results["information_ratio"] = info_ratio
+        
+        # Add plot path if requested
+        if generate_plot:
+            # Create title with time period information
+            start_date = ret_is.index.min().strftime('%Y-%m-%d')
+            end_date = ret_is.index.max().strftime('%Y-%m-%d')
+            title = f"Strategy Results ({start_date} to {end_date})"
+            
+            # Use custom path if provided, otherwise generate default
+            if plot_path is None:
+                plot_path = f"strategy_results_{start_date}_{end_date}.png"
+            
+            plot_path = plot_strategy_results(
+                strategy_weights=backtest_results["weights"],
+                strategy_net_returns=backtest_results["series_net"],
+                strategy_gross_returns=backtest_results["series_gross"],
+                equal_weight_weights=equal_weight_weights,
+                returns=ret_is,
+                title=title,
+                plot_path=plot_path
+            )
+            backtest_results["plot_path"] = plot_path
+        
+        return backtest_results
     
     def _sample_10_year_period(self, returns, scores):
         """Sample a random 10-year period from the data."""
